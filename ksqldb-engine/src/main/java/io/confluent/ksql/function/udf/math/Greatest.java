@@ -15,19 +15,19 @@
 
 package io.confluent.ksql.function.udf.math;
 
-
 import io.confluent.ksql.function.FunctionCategory;
+import io.confluent.ksql.function.KsqlFunctionException;
 import io.confluent.ksql.function.udf.Udf;
 import io.confluent.ksql.function.udf.UdfDescription;
 import io.confluent.ksql.function.udf.UdfParameter;
 import io.confluent.ksql.function.udf.UdfSchemaProvider;
 import io.confluent.ksql.schema.ksql.SqlArgument;
 import io.confluent.ksql.schema.ksql.types.SqlBaseType;
+import io.confluent.ksql.schema.ksql.types.SqlDecimal;
 import io.confluent.ksql.schema.ksql.types.SqlType;
 import io.confluent.ksql.util.KsqlConstants;
 import io.confluent.ksql.util.KsqlException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
@@ -41,72 +41,62 @@ import java.util.Objects;
 )
 public class Greatest {
 
-  //todo: how to verify that there is at least 1 argument?
-  //todo: If I do verify, suppress warnings on get or no?
-
   @Udf
-  public Integer greatest(@UdfParameter final Integer... val) {
-    return Arrays.stream(val)
-        .filter(Objects::nonNull)
+  public Integer greatest(@UdfParameter final Integer val, @UdfParameter final Integer... vals) {
+    return Math.max(val, Arrays.stream(vals)
         .max(Integer::compareTo)
-        .get();
+        .get());
   }
 
   @Udf
-  public Long greatest(@UdfParameter final Long... val) {
-    return Arrays.stream(val)
-        .filter(Objects::nonNull)
+  public Long greatest(@UdfParameter final Long val, @UdfParameter final Long... vals) {
+    return Math.max(val, Arrays.stream(vals)
         .max(Long::compareTo)
-        .get();
+        .get());
   }
 
   @Udf
-  public Double greatest(@UdfParameter final Double... val) {
-    return Arrays.stream(val)
+  public Double greatest(@UdfParameter final Double val, @UdfParameter final Double... vals) {
+    return Math.max(val, Arrays.stream(vals)
         .filter(Objects::nonNull)
         .max(Double::compareTo)
-        .get();
+        .get());
   }
 
   @Udf
-  public String greatest(@UdfParameter final String... val){
-    return Arrays.stream(val)
-        .filter(Objects::nonNull)
+  public String greatest(@UdfParameter final String val, @UdfParameter final String... vals) {
+    String greatestInArr = (Arrays.stream(vals)
         .max(String::compareTo)
-        .get();
+        .get());
+
+    return val.compareTo(greatestInArr) > 0 ? val : greatestInArr;
   }
 
-
-  //fixme: use bigDecimal.setScale()
-  @Udf(schemaProvider = "leastDecimalProvider")
-  public BigDecimal greatest(@UdfParameter final BigDecimal... val) {
-    //tentative code for checking precision and scale
-
-    BigDecimal bd = val[0];
-
-    if (Arrays.stream(val).anyMatch(b -> b.precision() != bd.precision() || b.scale() != bd.scale())){
-      throw new KsqlException("The schema provider for Greatest(Decimal) expects provided arguments to match in precision and scale.");
-    }
-
-
-    return val == null || val.length == 0 ? //todo: move check up
-        null :
-        Arrays.stream(val)
-            .filter(Objects::nonNull)
-            .max(Comparator.naturalOrder())
-            .get();
-
+  @Udf(schemaProvider = "greatestDecimalProvider")
+  public BigDecimal greatest(@UdfParameter final BigDecimal val,
+      @UdfParameter final BigDecimal... vals) {
+    return val.max(Arrays.stream(vals)
+        .max(Comparator.naturalOrder())
+        .get());
   }
 
   @UdfSchemaProvider
-  public SqlType leastDecimalProvider(final List<SqlArgument> params) {
+  public SqlType greatestDecimalProvider(final List<SqlArgument> params) {
+    if (params.get(0).getSqlTypeOrThrow().baseType() != SqlBaseType.DECIMAL) {
+      throw new KsqlException(
+          "The schema provider for Greatest expects a BigDecimal parameter type.");
+    }
+
+    SqlDecimal firstDecimal = (SqlDecimal) params.get(0).getSqlTypeOrThrow();
+
     if (
         params.stream()
             .map(SqlArgument::getSqlTypeOrThrow)
-            .allMatch(s -> s.baseType() == SqlBaseType.DECIMAL)) {
+            .allMatch(s -> s.baseType() == SqlBaseType.DECIMAL && s.equals(firstDecimal))) {
       return params.get(0).getSqlTypeOrThrow();
     } else {
-      throw new KsqlException("The schema provider for Greatest expects a BigDecimal parameter type.");
+      throw new KsqlFunctionException(
+          "The schema provider for Greatest expects a BigDecimal parameter type.");
     }
   }
 
