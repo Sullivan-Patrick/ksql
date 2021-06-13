@@ -15,6 +15,7 @@
 
 package io.confluent.ksql.function.udf.math;
 
+import com.google.common.collect.Streams;
 import io.confluent.ksql.function.FunctionCategory;
 import io.confluent.ksql.function.KsqlFunctionException;
 import io.confluent.ksql.function.udf.Udf;
@@ -31,6 +32,8 @@ import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 @UdfDescription(
     name = "Least",
@@ -46,40 +49,54 @@ public class Least {
   @Udf
   public Integer least(@UdfParameter final Integer val, @UdfParameter final Integer... vals) {
     //todo: throw a relevant exception or return null here
-    return Math.min(val, Arrays.stream(vals)
+    Stream<Integer> toConcat = Stream.of(val);
+    return Stream.concat(toConcat, Arrays.stream(vals))
+        .filter(Objects::nonNull)
         .min(Integer::compareTo)
-        .get());
+        .orElse(null);
   }
 
   @Udf
   public Long least(@UdfParameter final Long val, @UdfParameter final Long... vals) {
-    return Math.min(val, Arrays.stream(vals)
+    Stream<Long> toConcat = Stream.of(val);
+    return Stream.concat(toConcat, Arrays.stream(vals))
+        .filter(Objects::nonNull)
         .min(Long::compareTo)
-        .get());
+        .orElse(null);
   }
 
   @Udf
   public Double least(@UdfParameter final Double val, @UdfParameter final Double... vals) {
-    return Math.min(val, Arrays.stream(vals)
+
+    Stream<Double> toConcat = Stream.of(val);
+
+    return Streams.concat(toConcat, Arrays.stream(vals))
+        .filter(Objects::nonNull)
         .min(Double::compareTo)
-        .get());
+        .orElse(null);
   }
 
   @Udf
   public String least(@UdfParameter final String val, @UdfParameter final String... vals) {
-    String lowestInArr = (Arrays.stream(vals)
+
+    Stream<String> toConcat = Stream.of(val);
+
+    return Streams.concat(toConcat, Arrays.stream(vals))
+        .filter(Objects::nonNull)
         .min(String::compareTo)
-        .get());
-
-    return val.compareTo(lowestInArr) < 0 ? val : lowestInArr;
-
+        .orElse(null);
   }
 
   @Udf(schemaProvider = "leastDecimalProvider")
   public BigDecimal least(@UdfParameter final BigDecimal val, @UdfParameter final BigDecimal... vals) {
-        return val.min(Arrays.stream(vals)
-            .min(Comparator.naturalOrder())
-            .get());
+
+    Stream<BigDecimal> toConcat = Stream.of(val);
+
+    return Streams.concat(toConcat, Arrays.stream(vals))
+        .filter(Objects::nonNull)
+        .min(Comparator.naturalOrder())
+        .orElse(null);
+
   }
 
   @UdfSchemaProvider
