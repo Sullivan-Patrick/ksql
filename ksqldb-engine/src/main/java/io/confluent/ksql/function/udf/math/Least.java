@@ -45,7 +45,7 @@ public class Least {
   @Udf
   public Double least(@UdfParameter final Double val, @UdfParameter final Double... vals) {
 
-    Stream<Double> toConcat = Stream.of(val);
+    final Stream<Double> toConcat = Stream.of(val);
 
     return Streams.concat(toConcat, Arrays.stream(vals))
         .filter(Objects::nonNull)
@@ -55,7 +55,7 @@ public class Least {
 
   @Udf
   public Integer least(@UdfParameter final Integer val, @UdfParameter final Integer... vals) {
-    Stream<Integer> toConcat = Stream.of(val);
+    final Stream<Integer> toConcat = Stream.of(val);
     return Stream.concat(toConcat, Arrays.stream(vals))
         .filter(Objects::nonNull)
         .min(Integer::compareTo)
@@ -64,7 +64,7 @@ public class Least {
 
   @Udf
   public Long least(@UdfParameter final Long val, @UdfParameter final Long... vals) {
-    Stream<Long> toConcat = Stream.of(val);
+    final Stream<Long> toConcat = Stream.of(val);
     return Stream.concat(toConcat, Arrays.stream(vals))
         .filter(Objects::nonNull)
         .min(Long::compareTo)
@@ -74,7 +74,7 @@ public class Least {
   @Udf
   public String least(@UdfParameter final String val, @UdfParameter final String... vals) {
 
-    Stream<String> toConcat = Stream.of(val);
+    final Stream<String> toConcat = Stream.of(val);
 
     return Streams.concat(toConcat, Arrays.stream(vals))
         .filter(Objects::nonNull)
@@ -85,7 +85,7 @@ public class Least {
   @Udf(schemaProvider = "leastDecimalProvider")
   public BigDecimal least(@UdfParameter final BigDecimal val, @UdfParameter final BigDecimal... vals) {
 
-    Stream<BigDecimal> toConcat = Stream.of(val);
+    final Stream<BigDecimal> toConcat = Stream.of(val);
 
     return Streams.concat(toConcat, Arrays.stream(vals))
         .filter(Objects::nonNull)
