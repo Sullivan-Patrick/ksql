@@ -18,8 +18,26 @@ public class LeastTest {
     udf = new Least();
   }
 
+
+
+  /*
+  JUNIT
+  -shouldHandleWithoutTypeCoercion
+  -shouldHandleAllNullColumns
+  -shouldHandleSomeNullColumns
+
+  QTT
+  -shouldWorkIfImplicitlyCastedToLong
+  -ToDouble
+  -ToDecimal (check schemas here for decimal casts, incl. coercion to decimal from other types))
+  -NoParameters
+  -Numeric to string type
+
+
+   */
+
   @Test
-  public void shouldWorkInNormalCase(){
+  public void shouldWorkWithoutImplicitCasting(){
     assertThat(udf.least(0, 1, -1, 2, -2), is(-2));
     assertThat(udf.least(0L, 1L, -1L, 2L, -2L), is(-2L));
     assertThat(udf.least(0D, .1, -.1, .2, -.2), is(-.2));

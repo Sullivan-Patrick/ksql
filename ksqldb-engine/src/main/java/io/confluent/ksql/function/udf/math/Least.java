@@ -17,15 +17,14 @@ package io.confluent.ksql.function.udf.math;
 
 import com.google.common.collect.Streams;
 import io.confluent.ksql.function.FunctionCategory;
-import io.confluent.ksql.function.KsqlFunctionException;
 import io.confluent.ksql.function.udf.Udf;
 import io.confluent.ksql.function.udf.UdfDescription;
 import io.confluent.ksql.function.udf.UdfParameter;
 import io.confluent.ksql.function.udf.UdfSchemaProvider;
 import io.confluent.ksql.schema.ksql.SqlArgument;
 import io.confluent.ksql.schema.ksql.types.SqlBaseType;
-import io.confluent.ksql.schema.ksql.types.SqlDecimal;
 import io.confluent.ksql.schema.ksql.types.SqlType;
+import io.confluent.ksql.util.DecimalUtil;
 import io.confluent.ksql.util.KsqlConstants;
 import io.confluent.ksql.util.KsqlException;
 import java.math.BigDecimal;
@@ -43,12 +42,19 @@ import java.util.stream.Stream;
 )
 public class Least {
 
-  //todo: how to verify that there is at least 1 argument?
-  //todo: suppress warnings on get or no?
+  @Udf
+  public Double least(@UdfParameter final Double val, @UdfParameter final Double... vals) {
+
+    Stream<Double> toConcat = Stream.of(val);
+
+    return Streams.concat(toConcat, Arrays.stream(vals))
+        .filter(Objects::nonNull)
+        .min(Double::compareTo)
+        .orElse(null);
+  }
 
   @Udf
   public Integer least(@UdfParameter final Integer val, @UdfParameter final Integer... vals) {
-    //todo: throw a relevant exception or return null here
     Stream<Integer> toConcat = Stream.of(val);
     return Stream.concat(toConcat, Arrays.stream(vals))
         .filter(Objects::nonNull)
@@ -62,17 +68,6 @@ public class Least {
     return Stream.concat(toConcat, Arrays.stream(vals))
         .filter(Objects::nonNull)
         .min(Long::compareTo)
-        .orElse(null);
-  }
-
-  @Udf
-  public Double least(@UdfParameter final Double val, @UdfParameter final Double... vals) {
-
-    Stream<Double> toConcat = Stream.of(val);
-
-    return Streams.concat(toConcat, Arrays.stream(vals))
-        .filter(Objects::nonNull)
-        .min(Double::compareTo)
         .orElse(null);
   }
 
@@ -96,8 +91,8 @@ public class Least {
         .filter(Objects::nonNull)
         .min(Comparator.naturalOrder())
         .orElse(null);
-
   }
+
 
   @UdfSchemaProvider
   public SqlType leastDecimalProvider(final List<SqlArgument> params) {
@@ -105,18 +100,14 @@ public class Least {
       throw new KsqlException("The schema provider for Least expects a BigDecimal parameter type.");
     }
 
-    SqlDecimal firstDecimal = (SqlDecimal) params.get(0).getSqlTypeOrThrow();
+    SqlType wideDecimal = params.get(0).getSqlTypeOrThrow();
 
-    if (
-        params.stream()
-            .map(SqlArgument::getSqlTypeOrThrow)
-            .allMatch(s-> s.baseType() == SqlBaseType.DECIMAL && s.equals(firstDecimal)))
-    {
-      return params.get(0).getSqlTypeOrThrow();
-    } else {
-      throw new KsqlFunctionException("The schema provider for Least expects a BigDecimal parameter type.");
+    for (SqlArgument s: params) {
+      wideDecimal = DecimalUtil.widen(s.getSqlTypeOrThrow(), wideDecimal);
     }
-  }
 
+    return wideDecimal;
+
+    }
 
 }
