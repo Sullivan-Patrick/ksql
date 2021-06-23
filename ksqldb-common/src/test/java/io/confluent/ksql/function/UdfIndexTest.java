@@ -2,6 +2,7 @@ package io.confluent.ksql.function;
 
 import static io.confluent.ksql.function.KsqlScalarFunction.INTERNAL_PATH;
 import static io.confluent.ksql.function.types.ArrayType.of;
+import static io.confluent.ksql.schema.ksql.types.SqlTypes.BIGINT;
 import static io.confluent.ksql.schema.ksql.types.SqlTypes.INTEGER;
 import static java.lang.System.lineSeparator;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -49,10 +50,14 @@ public class UdfIndexTest {
   private static final ParamType MAP1 = MapType.of(STRING, STRING);
   private static final ParamType MAP2 = MapType.of(INT, INT);
   private static final ParamType INTERVALUNIT = ParamTypes.INTERVALUNIT;
-  private static final ParamType LAMBDA_KEY_FUNCTION = LambdaType.of(ImmutableList.of(GenericType.of("A")), GenericType.of("C"));
-  private static final ParamType LAMBDA_VALUE_FUNCTION = LambdaType.of(ImmutableList.of(GenericType.of("B")), GenericType.of("D"));
-  private static final ParamType LAMBDA_BI_FUNCTION = LambdaType.of(ImmutableList.of(GenericType.of("A"), GenericType.of("B")), GenericType.of("C"));
-  private static final ParamType LAMBDA_BI_FUNCTION_STRING = LambdaType.of(ImmutableList.of(STRING, STRING), GenericType.of("A"));
+  private static final ParamType LAMBDA_KEY_FUNCTION = LambdaType
+      .of(ImmutableList.of(GenericType.of("A")), GenericType.of("C"));
+  private static final ParamType LAMBDA_VALUE_FUNCTION = LambdaType
+      .of(ImmutableList.of(GenericType.of("B")), GenericType.of("D"));
+  private static final ParamType LAMBDA_BI_FUNCTION = LambdaType
+      .of(ImmutableList.of(GenericType.of("A"), GenericType.of("B")), GenericType.of("C"));
+  private static final ParamType LAMBDA_BI_FUNCTION_STRING = LambdaType
+      .of(ImmutableList.of(STRING, STRING), GenericType.of("A"));
 
   private static final ParamType GENERIC_LIST = ArrayType.of(GenericType.of("T"));
   private static final ParamType GENERIC_MAP = MapType.of(GenericType.of("A"), GenericType.of("B"));
@@ -110,6 +115,59 @@ public class UdfIndexTest {
   }
 
   @Test
+  public void shouldThrowWhenGivenVagueImplicitCast() { //todo: flag
+    // Given:
+    givenFunctions(
+        function(FIRST_FUNC, false, LONG, LONG),
+        function(SECOND_FUNC, false, DOUBLE, DOUBLE)
+    );
+
+    // When:
+    final Exception e = assertThrows(Exception.class,
+        () -> udfIndex
+            .getFunction(ImmutableList.of(SqlArgument.of(INTEGER), SqlArgument.of(BIGINT))));
+
+    // Then:
+    assertThat(e.getMessage(), containsString("Function 'name' does not accept parameters "
+        + "(INTEGER, BIGINT)"));
+  }
+
+  @Test
+  public void shouldFindFewerGenerics() {
+    // Given:
+    givenFunctions(
+        function(EXPECTED, false, INT, GenericType.of("A"), INT),
+        function(OTHER, false, INT, GenericType.of("A"), GenericType.of("B"))
+    );
+
+    // When:
+    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList
+        .of(SqlArgument.of(INTEGER), SqlArgument.of(INTEGER), SqlArgument.of(INTEGER)));
+
+    // Then:
+    assertThat(fun.name(), equalTo(EXPECTED));
+  }
+
+  @Test
+  public void shouldThrowOnComparablyEqualFunctionsWithSameGenericCount() {
+    // Given:
+    givenFunctions(
+        function(FIRST_FUNC, false, LONG, GenericType.of("A"), GenericType.of("B")),
+        function(SECOND_FUNC, false, DOUBLE, GenericType.of("A"), GenericType.of("B"))
+    );
+
+    // When:
+    final Exception e = assertThrows(Exception.class,
+        () -> udfIndex
+            .getFunction(ImmutableList
+                .of(SqlArgument.of(INTEGER), SqlArgument.of(INTEGER), SqlArgument.of(INTEGER))));
+
+    // Then:
+    assertThat(e.getMessage(), containsString("Function 'name' does not accept parameters "
+        + "(INTEGER, INTEGER, INTEGER)"));
+  }
+
+  @Test
   public void shouldFindOneArg() {
     // Given:
     givenFunctions(
@@ -117,7 +175,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -131,7 +190,8 @@ public class UdfIndexTest {
     Arrays.stream(functions).forEach(udfIndex::addFunction);
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.INTEGER)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.INTEGER)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -148,7 +208,8 @@ public class UdfIndexTest {
     Arrays.stream(functions).forEach(udfIndex::addFunction);
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.INTEGER)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.INTEGER)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -163,7 +224,8 @@ public class UdfIndexTest {
 
     // When:
     final KsqlScalarFunction fun = udfIndex
-        .getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.INTEGER)));
+        .getFunction(
+            ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.INTEGER)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -178,7 +240,8 @@ public class UdfIndexTest {
 
     // When:
     final KsqlScalarFunction fun = udfIndex
-        .getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.STRING)));
+        .getFunction(
+            ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.STRING)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -193,7 +256,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -208,7 +272,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.STRING)));
+    final KsqlScalarFunction fun = udfIndex.getFunction(
+        ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.STRING)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -223,7 +288,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(STRUCT1_ARG)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(STRUCT1_ARG)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -409,7 +475,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(DECIMAL1_ARG)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(DECIMAL1_ARG)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -437,7 +504,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -452,7 +520,8 @@ public class UdfIndexTest {
 
     // When:
     final KsqlScalarFunction fun = udfIndex
-        .getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.STRING)));
+        .getFunction(
+            ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.STRING)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -466,7 +535,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(STRUCT1_ARG), SqlArgument.of(STRUCT1_ARG)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(STRUCT1_ARG), SqlArgument.of(STRUCT1_ARG)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -496,7 +566,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -512,7 +583,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -528,7 +600,8 @@ public class UdfIndexTest {
 
     // When:
     final KsqlScalarFunction fun = udfIndex
-        .getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.STRING)));
+        .getFunction(
+            ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.STRING)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -556,7 +629,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(Arrays.asList(null, SqlArgument.of(SqlTypes.STRING)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(Arrays.asList(null, SqlArgument.of(SqlTypes.STRING)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -599,7 +673,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(Arrays.asList(null, SqlArgument.of(SqlTypes.STRING), null));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(Arrays.asList(null, SqlArgument.of(SqlTypes.STRING), null));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -629,7 +704,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(Arrays.asList(SqlArgument.of(null, null), SqlArgument.of(null, null)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(Arrays.asList(SqlArgument.of(null, null), SqlArgument.of(null, null)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -644,7 +720,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(Arrays.asList(SqlArgument.of(null, null), SqlArgument.of(null, null)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(Arrays.asList(SqlArgument.of(null, null), SqlArgument.of(null, null)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -659,7 +736,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(Arrays.asList(SqlArgument.of(SqlTypes.STRING), null));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(Arrays.asList(SqlArgument.of(SqlTypes.STRING), null));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -677,7 +755,9 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(Arrays.asList(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(INTEGER), null, SqlArgument.of(INTEGER)));
+    final KsqlScalarFunction fun = udfIndex.getFunction(Arrays
+        .asList(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(INTEGER), null,
+            SqlArgument.of(INTEGER)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -691,7 +771,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(Collections.singletonList(SqlArgument.of(SqlArray.of(SqlTypes.INTEGER))));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(Collections.singletonList(SqlArgument.of(SqlArray.of(SqlTypes.INTEGER))));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -705,7 +786,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(Collections.singletonList(SqlArgument.of(SqlArray.of(SqlTypes.STRING))));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(Collections.singletonList(SqlArgument.of(SqlArray.of(SqlTypes.STRING))));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -720,7 +802,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(INTEGER), SqlArgument.of(INTEGER)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(INTEGER), SqlArgument.of(INTEGER)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -736,7 +819,8 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(INTEGER), SqlArgument.of(SqlTypes.STRING)));
+    final KsqlScalarFunction fun = udfIndex
+        .getFunction(ImmutableList.of(SqlArgument.of(INTEGER), SqlArgument.of(SqlTypes.STRING)));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -751,7 +835,9 @@ public class UdfIndexTest {
     );
 
     // When:
-    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlArray.of(SqlTypes.INTEGER)), SqlArgument.of(SqlArray.of(SqlTypes.INTEGER))));
+    final KsqlScalarFunction fun = udfIndex.getFunction(ImmutableList
+        .of(SqlArgument.of(SqlArray.of(SqlTypes.INTEGER)),
+            SqlArgument.of(SqlArray.of(SqlTypes.INTEGER))));
 
     // Then:
     assertThat(fun.name(), equalTo(EXPECTED));
@@ -767,7 +853,8 @@ public class UdfIndexTest {
     // When:
     final Exception e = assertThrows(
         KsqlException.class,
-        () -> udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.STRING)))
+        () -> udfIndex.getFunction(
+            ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(SqlTypes.STRING)))
     );
 
     // Then:
@@ -822,7 +909,9 @@ public class UdfIndexTest {
     // When:
     final Exception e = assertThrows(
         KsqlException.class,
-        () -> udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(INTEGER), SqlArgument.of(SqlTypes.STRING)))
+        () -> udfIndex.getFunction(ImmutableList
+            .of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(INTEGER),
+                SqlArgument.of(SqlTypes.STRING)))
     );
 
     // Then:
@@ -858,7 +947,8 @@ public class UdfIndexTest {
     // When:
     final Exception e = assertThrows(
         KsqlException.class,
-        () -> udfIndex.getFunction(ImmutableList.of(SqlArgument.of(STRUCT1_ARG), SqlArgument.of(STRUCT2_ARG)))
+        () -> udfIndex
+            .getFunction(ImmutableList.of(SqlArgument.of(STRUCT1_ARG), SqlArgument.of(STRUCT2_ARG)))
     );
 
     // Then:
@@ -877,7 +967,8 @@ public class UdfIndexTest {
     // When:
     final Exception e = assertThrows(
         KsqlException.class,
-        () -> udfIndex.getFunction(ImmutableList.of(SqlArgument.of(INTEGER), SqlArgument.of(SqlTypes.STRING)))
+        () -> udfIndex
+            .getFunction(ImmutableList.of(SqlArgument.of(INTEGER), SqlArgument.of(SqlTypes.STRING)))
     );
 
     // Then:
@@ -897,7 +988,8 @@ public class UdfIndexTest {
     final Exception e = assertThrows(
         KsqlException.class,
         () -> udfIndex
-            .getFunction(ImmutableList.of(SqlArgument.of(SqlArray.of(SqlTypes.INTEGER)), SqlArgument.of(SqlArray.of(SqlTypes.STRING))))
+            .getFunction(ImmutableList.of(SqlArgument.of(SqlArray.of(SqlTypes.INTEGER)),
+                SqlArgument.of(SqlArray.of(SqlTypes.STRING))))
     );
 
     // Then:
@@ -918,7 +1010,9 @@ public class UdfIndexTest {
     // When:
     final Exception e = assertThrows(
         Exception.class,
-        () -> udfIndex.getFunction(ImmutableList.of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(INTEGER), SqlArgument.of(SqlTypes.STRING)))
+        () -> udfIndex.getFunction(ImmutableList
+            .of(SqlArgument.of(SqlTypes.STRING), SqlArgument.of(INTEGER),
+                SqlArgument.of(SqlTypes.STRING)))
     );
 
     // Then:
@@ -935,7 +1029,7 @@ public class UdfIndexTest {
   public void shouldSupportMatchAndImplicitCastEnabled() {
     // Given:
     givenFunctions(
-            function(EXPECTED, false, DOUBLE)
+        function(EXPECTED, false, DOUBLE)
     );
 
     // When:
@@ -950,18 +1044,18 @@ public class UdfIndexTest {
     // Given:
     udfIndex = new UdfIndex<>("name", false);
     givenFunctions(
-            function(OTHER, false, DOUBLE)
+        function(OTHER, false, DOUBLE)
     );
 
     // When:
     final Exception e = assertThrows(
-            KsqlException.class,
-            () -> udfIndex.getFunction(ImmutableList.of(SqlArgument.of(INTEGER)))
+        KsqlException.class,
+        () -> udfIndex.getFunction(ImmutableList.of(SqlArgument.of(INTEGER)))
     );
 
     // Then:
     assertThat(e.getMessage(), containsString("Function 'name' does not accept parameters "
-            + "(INTEGER)"));
+        + "(INTEGER)"));
   }
 
   private void givenFunctions(final KsqlScalarFunction... functions) {
