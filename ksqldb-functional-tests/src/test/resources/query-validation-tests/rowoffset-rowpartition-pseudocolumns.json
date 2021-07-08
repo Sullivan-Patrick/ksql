@@ -44,7 +44,7 @@
       }
     },
     {
-      "name": "should recognize rowpartition as reserved column in new source streams",
+      "name": "should recognize rowpartition as reserved column in new sink streams",
       "properties":{
         "ksql.rowpartition.rowoffset.enabled": true
       },
