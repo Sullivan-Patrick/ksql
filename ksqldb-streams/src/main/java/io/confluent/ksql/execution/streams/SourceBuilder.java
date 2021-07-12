@@ -506,10 +506,14 @@ public final class SourceBuilder {
           }
 
           final long timestamp = processorContext.timestamp();
+          final long offset = processorContext.offset();
+          final int partition = processorContext.partition();
           final Collection<?> keyColumns = keyGenerator.apply(key);
 
-          row.ensureAdditionalCapacity(1 + keyColumns.size());
+          row.ensureAdditionalCapacity(3 + keyColumns.size());
           row.append(timestamp);
+          row.append(offset);
+          row.append(partition);
           row.appendAll(keyColumns);
           return row;
         }

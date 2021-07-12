@@ -75,7 +75,7 @@ public class GenericRecordFactory {
               + ". Got " + expressions);
     }
 
-    final LogicalSchema schemaWithRowTime = withRowTime(schema);
+    final LogicalSchema schemaWithRowTime = withPseudoColumns(schema);
     for (ColumnName col : columns) {
       if (!schemaWithRowTime.findColumn(col).isPresent()) {
         throw new KsqlException("Column name " + col + " does not exist.");
@@ -125,6 +125,16 @@ public class GenericRecordFactory {
     // so include it in the schema:
     return schema.asBuilder()
         .valueColumn(SystemColumns.ROWTIME_NAME, SystemColumns.ROWTIME_TYPE)
+        .build();
+  }
+
+  private static LogicalSchema withPseudoColumns(final LogicalSchema schema) {
+    // The set of columns users can supply values for includes pseudocolumns,
+    // so include them in the schema:
+    return schema.asBuilder()
+        .valueColumn(SystemColumns.ROWTIME_NAME, SystemColumns.ROWTIME_TYPE)
+        .valueColumn(SystemColumns.ROWOFFSET_NAME, SystemColumns.ROWOFFSET_TYPE)
+        .valueColumn(SystemColumns.ROWPARTITION_NAME, SystemColumns.ROWPARTITION_TYPE)
         .build();
   }
 

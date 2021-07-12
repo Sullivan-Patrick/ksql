@@ -17,6 +17,10 @@ package io.confluent.ksql.schema.ksql;
 
 import static io.confluent.ksql.schema.ksql.Column.Namespace.KEY;
 import static io.confluent.ksql.schema.ksql.Column.Namespace.VALUE;
+import static io.confluent.ksql.schema.ksql.SystemColumns.ROWOFFSET_NAME;
+import static io.confluent.ksql.schema.ksql.SystemColumns.ROWOFFSET_TYPE;
+import static io.confluent.ksql.schema.ksql.SystemColumns.ROWPARTITION_NAME;
+import static io.confluent.ksql.schema.ksql.SystemColumns.ROWPARTITION_TYPE;
 import static io.confluent.ksql.schema.ksql.SystemColumns.ROWTIME_NAME;
 import static io.confluent.ksql.schema.ksql.SystemColumns.ROWTIME_TYPE;
 import static io.confluent.ksql.schema.ksql.SystemColumns.WINDOWBOUND_TYPE;
@@ -262,6 +266,8 @@ public final class LogicalSchema {
 
     if (withPseudoAndKeyColsInValue) {
       builder.add(Column.of(ROWTIME_NAME, ROWTIME_TYPE, VALUE, valueIndex++));
+      builder.add(Column.of(ROWOFFSET_NAME, ROWOFFSET_TYPE, VALUE, valueIndex++),
+          Column.of(ROWPARTITION_NAME, ROWPARTITION_TYPE, VALUE, valueIndex++));
 
       for (final Column c : key) {
         builder.add(Column.of(c.name(), c.type(), VALUE, valueIndex++));

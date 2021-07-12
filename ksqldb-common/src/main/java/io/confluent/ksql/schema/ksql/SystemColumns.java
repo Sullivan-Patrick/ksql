@@ -24,9 +24,14 @@ import java.util.Set;
 public final class SystemColumns {
 
   public static final ColumnName ROWKEY_NAME = ColumnName.of("ROWKEY");
-
   public static final ColumnName ROWTIME_NAME = ColumnName.of("ROWTIME");
   public static final SqlType ROWTIME_TYPE = SqlTypes.BIGINT;
+
+  public static final ColumnName ROWOFFSET_NAME = ColumnName.of("ROWOFFSET");
+  public static final SqlType ROWOFFSET_TYPE = SqlTypes.BIGINT;
+
+  public static final ColumnName ROWPARTITION_NAME = ColumnName.of("ROWPARTITION");
+  public static final SqlType ROWPARTITION_TYPE = SqlTypes.INTEGER;
 
   public static final ColumnName WINDOWSTART_NAME = ColumnName.of("WINDOWSTART");
   public static final ColumnName WINDOWEND_NAME = ColumnName.of("WINDOWEND");
@@ -36,8 +41,10 @@ public final class SystemColumns {
   public static final int CURRENT_PSEUDOCOLUMN_VERSION_NUMBER = 5;
 
   private static final Set<ColumnName> PSEUDO_COLUMN_NAMES = ImmutableSet.of(
-      ROWTIME_NAME
-  );
+      ROWTIME_NAME,
+      ROWPARTITION_NAME,
+      ROWOFFSET_NAME
+      );
 
   private static final Set<ColumnName> WINDOW_BOUNDS_COLUMN_NAMES = ImmutableSet.of(
       WINDOWSTART_NAME,
