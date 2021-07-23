@@ -279,11 +279,11 @@ public final class StepSchemaResolver {
   }
 
   private LogicalSchema handleSource(final LogicalSchema schema, final SourceStep<?> step) {
-    return buildSourceSchema(schema, false);
+    return buildSourceSchema(schema, false, step.getPseudoColumnVersion());
   }
 
   private LogicalSchema handleWindowedSource(final LogicalSchema schema, final SourceStep<?> step) {
-    return buildSourceSchema(schema, true);
+    return buildSourceSchema(schema, true, step.getPseudoColumnVersion());
   }
 
   private LogicalSchema handleStreamStreamJoin(
@@ -355,12 +355,14 @@ public final class StepSchemaResolver {
     return schema;
   }
 
+  //todo: pipe pseudocolumnVersion here
   private LogicalSchema buildSourceSchema(
       final LogicalSchema schema,
-      final boolean windowed
+      final boolean windowed,
+      final int pseudoColumnVersion
   ) {
     return schema
-        .withPseudoAndKeyColsInValue(windowed);
+        .withPseudoAndKeyColsInValue(windowed, pseudoColumnVersion);
   }
 
   private LogicalSchema buildSelectSchema(
