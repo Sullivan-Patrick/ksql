@@ -42,7 +42,7 @@ public final class SystemColumns {
   public static final SqlType WINDOWBOUND_TYPE = SqlTypes.BIGINT;
 
   public static final int LEGACY_PSEUDOCOLUMN_VERSION_NUMBER = 0;
-  public static final int CURRENT_PSEUDOCOLUMN_VERSION_NUMBER = 0;
+  public static final int CURRENT_PSEUDOCOLUMN_VERSION_NUMBER = 1;
 
   public static Set<ColumnName> getPseudoColumnsFromVersion(final int version) {
     return versionedPseudoColumns.get(version);
