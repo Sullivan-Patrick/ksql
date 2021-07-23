@@ -38,6 +38,7 @@ import io.confluent.ksql.execution.timestamp.TimestampColumn;
 import io.confluent.ksql.schema.ksql.Column;
 import io.confluent.ksql.schema.ksql.LogicalSchema;
 import io.confluent.ksql.schema.ksql.PhysicalSchema;
+import io.confluent.ksql.schema.ksql.SystemColumns;
 import io.confluent.ksql.serde.FormatFactory;
 import io.confluent.ksql.serde.FormatInfo;
 import io.confluent.ksql.serde.SerdeFeature;
@@ -271,7 +272,7 @@ public final class SourceBuilder {
   ) {
     return source
         .getSourceSchema()
-        .withPseudoAndKeyColsInValue(windowed);
+        .withPseudoAndKeyColsInValue(windowed, source.getPseudoColumnVersion());
   }
 
   private static Serde<GenericRow> getValueSerde(
@@ -302,8 +303,9 @@ public final class SourceBuilder {
     final KStream<K, GenericRow> stream = buildContext.getStreamsBuilder()
         .stream(streamSource.getTopicName(), consumed);
 
+    final int pseudoColumnVersion = streamSource.getPseudoColumnVersion();
     return stream
-        .transformValues(new AddKeyAndTimestampColumns<>(keyGenerator));
+        .transformValues(new AddKeyAndPseudoColumns<>(keyGenerator, pseudoColumnVersion));
   }
 
   private static <K> KTable<K, GenericRow> buildKTable(
@@ -356,7 +358,7 @@ public final class SourceBuilder {
     }
 
     return table
-        .transformValues(new AddKeyAndTimestampColumns<>(keyGenerator));
+        .transformValues(new AddKeyAndPseudoColumns<>(keyGenerator, streamSource.getPseudoColumnVersion()));
   }
 
   private static StaticTopicSerde.Callback getRegisterCallback(
@@ -480,13 +482,16 @@ public final class SourceBuilder {
     return key -> key == null ? nullKey.values() : key.values();
   }
 
-  private static class AddKeyAndTimestampColumns<K>
+  private static class AddKeyAndPseudoColumns<K>
       implements ValueTransformerWithKeySupplier<K, GenericRow, GenericRow> {
 
     private final Function<K, Collection<?>> keyGenerator;
+    private int pseudoColumnVersion;
 
-    AddKeyAndTimestampColumns(final Function<K, Collection<?>> keyGenerator) {
+    AddKeyAndPseudoColumns(
+        final Function<K, Collection<?>> keyGenerator, final int pseudoColumnVersion) {
       this.keyGenerator = requireNonNull(keyGenerator, "keyGenerator");
+      this.pseudoColumnVersion = pseudoColumnVersion;
     }
 
     @Override
@@ -510,10 +515,18 @@ public final class SourceBuilder {
           final int partition = processorContext.partition();
           final Collection<?> keyColumns = keyGenerator.apply(key);
 
-          row.ensureAdditionalCapacity(3 + keyColumns.size());
+          //todo: map this to size of pseudocolumn set from systemcols
+          final int additionalColumns = SystemColumns
+              .getPseudoColumnsFromVersion(pseudoColumnVersion).size();
+
+          row.ensureAdditionalCapacity(additionalColumns + keyColumns.size());
           row.append(timestamp);
-          row.append(offset);
-          row.append(partition);
+
+          if (pseudoColumnVersion > 0) {
+            row.append(offset);
+            row.append(partition);
+          }
+
           row.appendAll(keyColumns);
           return row;
         }

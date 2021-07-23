@@ -56,7 +56,7 @@ public abstract class CreateSourceCommand implements DdlCommand {
     this.windowInfo = Objects.requireNonNull(windowInfo, "windowInfo");
     this.orReplace = orReplace;
 
-    validate(schema, windowInfo.isPresent());
+//    validate(schema, windowInfo.isPresent());
   }
 
   public SourceName getSourceName() {

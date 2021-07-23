@@ -130,7 +130,13 @@ public final class LogicalSchema {
    * @return the new schema.
    */
   public LogicalSchema withPseudoAndKeyColsInValue(final boolean windowed) {
-    return rebuild(true, windowed);
+    return rebuild(true, windowed, SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER); //todo: deprecate this. everywhere should be called w version?
+  }
+
+  //
+  public LogicalSchema withPseudoAndKeyColsInValue(
+      final boolean windowed, final int pseudoColumnVersion) {
+    return rebuild(true, windowed, pseudoColumnVersion);
   }
 
   /**
@@ -139,7 +145,7 @@ public final class LogicalSchema {
    * @return the new schema with the columns removed.
    */
   public LogicalSchema withoutPseudoAndKeyColsInValue() {
-    return rebuild(false, false);
+    return rebuild(false, false, -1);
   }
 
   /**
@@ -240,7 +246,8 @@ public final class LogicalSchema {
 
   private LogicalSchema rebuild(
       final boolean withPseudoAndKeyColsInValue,
-      final boolean windowedKey
+      final boolean windowedKey,
+      final int pseudoColumnVersion
   ) {
     final Map<Namespace, List<Column>> byNamespace = byNamespace();
 
@@ -266,8 +273,11 @@ public final class LogicalSchema {
 
     if (withPseudoAndKeyColsInValue) {
       builder.add(Column.of(ROWTIME_NAME, ROWTIME_TYPE, VALUE, valueIndex++));
-      builder.add(Column.of(ROWOFFSET_NAME, ROWOFFSET_TYPE, VALUE, valueIndex++),
-          Column.of(ROWPARTITION_NAME, ROWPARTITION_TYPE, VALUE, valueIndex++));
+
+      if (pseudoColumnVersion > 0) {
+        builder.add(Column.of(ROWOFFSET_NAME, ROWOFFSET_TYPE, VALUE, valueIndex++));
+        builder.add(Column.of(ROWPARTITION_NAME, ROWPARTITION_TYPE, VALUE, valueIndex++));
+      }
 
       for (final Column c : key) {
         builder.add(Column.of(c.name(), c.type(), VALUE, valueIndex++));

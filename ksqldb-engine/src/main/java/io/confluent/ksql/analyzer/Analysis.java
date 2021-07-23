@@ -276,7 +276,7 @@ public class Analysis implements ImmutableAnalysis {
 
     return ds.getDataSource()
         .getSchema()
-        .withPseudoAndKeyColsInValue(windowedSource || windowedGroupBy);
+        .withPseudoAndKeyColsInValue(windowedSource || windowedGroupBy, SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER); //todo: pipe versionNumber?
   }
 
   @Immutable
