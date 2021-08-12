@@ -50,7 +50,7 @@ public final class SystemColumns {
 
   public static final int LEGACY_PSEUDOCOLUMN_VERSION_NUMBER = ROWTIME_PSEUDOCOLUMN_VERSION;
   public static final int CURRENT_PSEUDOCOLUMN_VERSION_NUMBER =
-      ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION;
+      ROWTIME_PSEUDOCOLUMN_VERSION;
 
   private static final Set<ColumnName> WINDOW_BOUNDS_COLUMN_NAMES = ImmutableSet.of(
       WINDOWSTART_NAME,
