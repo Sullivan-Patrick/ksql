@@ -190,7 +190,7 @@ public final class SourceBuilder {
 
     final String stateStoreName = tableChangeLogOpName(source.getProperties());
 
-    final PhysicalSchema physicalSchemaWithPseudoCols = getPhysicalSchemaWithPseudoCols(source);
+    final PhysicalSchema physicalSchemaWithPseudoCols = getPhysicalSchemaWithPseudoColumnsToMaterialize(source);
 
     final Serde<GenericRow> valueSerdeWithPseudoCols = getValueSerdeWithDifferentQueryContext(
         buildContext, source, physicalSchemaWithPseudoCols);
@@ -201,7 +201,7 @@ public final class SourceBuilder {
 
     final Serde<GenericKey> keySerdeWithPseudoCols = buildContext.buildKeySerde(
         source.getFormats().getKeyFormat(),
-        physicalSchemaWithPseudoCols,
+        physicalSchema,
         queryContextWithPseudoCols
     );
 
@@ -362,6 +362,28 @@ public final class SourceBuilder {
     );
   }
 
+  private static PhysicalSchema getPhysicalSchemaWithPseudoColumnsToMaterialize(
+      final SourceStep<?> streamSource) {
+
+    FormatInfo f = streamSource.getFormats().getKeyFormat();
+    SerdeFeatures s = streamSource.getFormats().getKeyFeatures();
+    KeyFormat k = streamSource instanceof WindowedTableSource
+        ? KeyFormat.windowed(f, s, ((WindowedTableSource) streamSource).getWindowInfo())
+        : KeyFormat.nonWindowed(f, s);
+
+    Formats format = of(k, streamSource.getFormats().getValueFormat());
+
+    LogicalSchema withPseudosToMaterialize
+        = streamSource.getSourceSchema().withPseudoColumnsToMaterialize(
+            false, streamSource.getPseudoColumnVersion());
+
+    return PhysicalSchema.from(
+        withPseudosToMaterialize,
+        format.getKeyFeatures(),
+        format.getValueFeatures()
+    );
+  }
+
   public static Formats of(final KeyFormat keyFormat, final FormatInfo valueFormat) {
     // Do not use NONE format for internal topics:
     if (keyFormat.getFormatInfo().getFormat().equals(NoneFormat.NAME)) {
@@ -424,7 +446,7 @@ public final class SourceBuilder {
       final boolean forceMaterialization = !planInfo.isRepartitionedInPlan(streamSource);
 
       source = source.transformValues(
-          new AddKeyAndPseudoColumns<>(keyGenerator, streamSource.getPseudoColumnVersion()));
+          new AddPseudoColumnsToMaterialize<>(streamSource.getPseudoColumnVersion()));
 
       if (forceMaterialization) {
         // add this identity mapValues call to prevent the source-changelog
@@ -443,7 +465,9 @@ public final class SourceBuilder {
       }
     }
 
-    return table;
+    return table.transformValues(
+        new AddRemainingPseudoAndKeyCols<>(keyGenerator, streamSource.getPseudoColumnVersion())
+    );
   }
 
   private static StaticTopicSerde.Callback getRegisterCallback(
@@ -624,6 +648,123 @@ public final class SourceBuilder {
       };
     }
   }
+
+  private static class AddRemainingPseudoAndKeyCols<K>
+      implements ValueTransformerWithKeySupplier<K, GenericRow, GenericRow> {
+
+    private final Function<K, Collection<?>> keyGenerator;
+    private final int pseudoColumnVersion;
+
+    AddRemainingPseudoAndKeyCols(
+        final Function<K, Collection<?>> keyGenerator, final int pseudoColumnVersion) {
+      this.keyGenerator = requireNonNull(keyGenerator, "keyGenerator");
+      this.pseudoColumnVersion = pseudoColumnVersion;
+    }
+
+    @Override
+    public ValueTransformerWithKey<K, GenericRow, GenericRow> get() {
+      return new ValueTransformerWithKey<K, GenericRow, GenericRow>() {
+        private ProcessorContext processorContext;
+
+        @Override
+        public void init(final ProcessorContext processorContext) {
+          this.processorContext = requireNonNull(processorContext, "processorContext");
+        }
+
+        @Override
+        public GenericRow transform(final K key, final GenericRow row) {
+          if (row == null) {
+            return row;
+          }
+
+
+          final Collection<?> keyColumns = keyGenerator.apply(key);
+
+          //remove pseudocolumns we previously materialized so we can add them back in correct order
+          final GenericRow g = new GenericRow();
+          g.ensureAdditionalCapacity(row.size() - 2 + 1 + keyColumns.size()); //remove RO/RP, add timestamp and keys
+
+          for (int i = 0; i < row.size() - 2; i++) {
+            Object o = g.get(i);
+            g.append(o);
+          }
+
+          if (pseudoColumnVersion >= SystemColumns.ROWTIME_PSEUDOCOLUMN_VERSION) {
+            final long timestamp = processorContext.timestamp();
+            g.append(timestamp);
+          }
+
+          if (pseudoColumnVersion >= SystemColumns.ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION) {
+            final int partition = processorContext.partition();
+            final long offset = processorContext.offset();
+            g.append(partition);
+            g.append(offset);
+          }
+
+          g.appendAll(keyColumns);
+          return row;
+        }
+
+        @Override
+        public void close() {
+        }
+      };
+    }
+  }
+
+
+  private static class AddPseudoColumnsToMaterialize<K>
+      implements ValueTransformerWithKeySupplier<K, GenericRow, GenericRow> {
+
+    private final int pseudoColumnVersion;
+
+    AddPseudoColumnsToMaterialize(final int pseudoColumnVersion) {
+      this.pseudoColumnVersion = pseudoColumnVersion;
+    }
+
+    @Override
+    public ValueTransformerWithKey<K, GenericRow, GenericRow> get() {
+      return new ValueTransformerWithKey<K, GenericRow, GenericRow>() {
+        private ProcessorContext processorContext;
+
+        @Override
+        public void init(final ProcessorContext processorContext) {
+          this.processorContext = requireNonNull(processorContext, "processorContext");
+        }
+
+        @Override
+        public GenericRow transform(final K key, final GenericRow row) {
+          if (row == null) {
+            return row;
+          }
+
+          final int numPseudoColumns = SystemColumns
+              .pseudoColumnNames(pseudoColumnVersion).size();
+
+          row.ensureAdditionalCapacity(numPseudoColumns - 1);
+
+          if (pseudoColumnVersion >= SystemColumns.ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION) {
+            final int partition = processorContext.partition();
+            final long offset = processorContext.offset();
+            row.append(partition);
+            row.append(offset);
+          }
+
+          return row;
+        }
+
+        @Override
+        public void close() {
+        }
+      };
+    }
+  }
+
+//  private GenericRow buildRowWithAdditionalPseudoColumns(final GenericRow row) {
+//    //extract all values until we run into rowpartition
+//    //add back in same order, but with RT/keys beforehand
+//
+//  }
 
   private static Topology.AutoOffsetReset getAutoOffsetReset(
       final Topology.AutoOffsetReset defaultValue,

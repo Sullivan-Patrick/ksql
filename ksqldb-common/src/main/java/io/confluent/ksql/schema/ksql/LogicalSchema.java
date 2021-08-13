@@ -156,6 +156,14 @@ public final class LogicalSchema {
     return withPseudoAndKeyColsInValue(windowed, CURRENT_PSEUDOCOLUMN_VERSION_NUMBER);
   }
 
+  public LogicalSchema withPseudoColumnsToMaterialize(final boolean windowed) {
+    return withPseudoColumnsToMaterialize(windowed, CURRENT_PSEUDOCOLUMN_VERSION_NUMBER);
+  }
+
+  public LogicalSchema withPseudoColumnsToMaterialize(final boolean windowed, final int pseudoColumnVersion) {
+    return rebuildWithPseudoColumnsToMaterialize(windowed, pseudoColumnVersion);
+  }
+
   /**
    * Remove pseudo and key columns from the value schema, according to the pseudocolumn version from
    * the value schema.
@@ -307,6 +315,26 @@ public final class LogicalSchema {
           Column.of(WINDOWSTART_NAME, WINDOWBOUND_TYPE, VALUE, valueIndex++));
       builder.add(
           Column.of(WINDOWEND_NAME, WINDOWBOUND_TYPE, VALUE, valueIndex));
+    }
+
+
+    return new LogicalSchema(builder.build());
+  }
+
+  private LogicalSchema rebuildWithPseudoColumnsToMaterialize(
+      final boolean windowedKey, final int pseudoColumnVersion) {
+    final Map<Namespace, List<Column>> byNamespace = byNamespace();
+
+    final List<Column> key = byNamespace.get(Namespace.KEY);
+
+    final ImmutableList.Builder<Column> builder = ImmutableList.builder();
+
+    int valueIndex = addNonPseudoAndKeyColsToValueSchema(builder, pseudoColumnVersion);
+
+
+    if (pseudoColumnVersion >= ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION) {
+      builder.add(Column.of(ROWPARTITION_NAME, ROWPARTITION_TYPE, VALUE, valueIndex++));
+      builder.add(Column.of(ROWOFFSET_NAME, ROWOFFSET_TYPE, VALUE, valueIndex++));
     }
 
 
