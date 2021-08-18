@@ -17,6 +17,7 @@ package io.confluent.ksql.execution.streams;
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.AddKeyAndPseudoColumns;
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.changelogTopic;
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.getRegisterCallback;
+import static java.util.Objects.requireNonNull;
 
 import io.confluent.ksql.GenericKey;
 import io.confluent.ksql.GenericRow;
@@ -26,22 +27,28 @@ import io.confluent.ksql.execution.plan.KTableHolder;
 import io.confluent.ksql.execution.plan.PlanInfo;
 import io.confluent.ksql.execution.plan.SourceStep;
 import io.confluent.ksql.execution.plan.WindowedTableSource;
-import io.confluent.ksql.execution.plan.WindowedTableSourceV1;
 import io.confluent.ksql.execution.runtime.RuntimeBuildContext;
+import io.confluent.ksql.schema.ksql.LogicalSchema;
 import io.confluent.ksql.schema.ksql.PhysicalSchema;
+import io.confluent.ksql.schema.ksql.SystemColumns;
 import io.confluent.ksql.serde.FormatInfo;
 import io.confluent.ksql.serde.KeyFormat;
 import io.confluent.ksql.serde.SerdeFeatures;
 import io.confluent.ksql.serde.StaticTopicSerde;
 import io.confluent.ksql.serde.StaticTopicSerde.Callback;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.function.Function;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KTable;
 import org.apache.kafka.streams.kstream.Materialized;
+import org.apache.kafka.streams.kstream.ValueTransformerWithKey;
+import org.apache.kafka.streams.kstream.ValueTransformerWithKeySupplier;
 import org.apache.kafka.streams.kstream.Windowed;
+import org.apache.kafka.streams.processor.ProcessorContext;
 import org.apache.kafka.streams.state.KeyValueStore;
 
 final class SourceBuilder extends SourceBuilderBase{
@@ -80,7 +87,7 @@ final class SourceBuilder extends SourceBuilderBase{
       final boolean forceMaterialization = !planInfo.isRepartitionedInPlan(streamSource);
 
       final KTable<K, GenericRow> transformed = source.transformValues(
-          new AddKeyAndPseudoColumns<>(keyGenerator, streamSource.getPseudoColumnVersion()));
+          new AddPseudoColumnsToMaterialize<>(streamSource.getPseudoColumnVersion()));
 
       if (forceMaterialization) {
         // add this identity mapValues call to prevent the source-changelog
@@ -98,7 +105,9 @@ final class SourceBuilder extends SourceBuilderBase{
         table = transformed.mapValues(row -> row);
       }
 
-    return table;
+    return table.transformValues(new AddRemainingPseudoAndKeyCols<>(
+        keyGenerator,
+        streamSource.getPseudoColumnVersion()));
   }
 
   @Override
@@ -139,7 +148,7 @@ final class SourceBuilder extends SourceBuilderBase{
 
     final String stateStoreName = SourceBuilderUtils.tableChangeLogOpName(source.getProperties());
 
-    final PhysicalSchema physicalSchema = getPhysicalSchemaWithKeyAndPseudoCols(source);
+    final PhysicalSchema physicalSchema = getPhysicalSchemaWithPseudoColumnsToMaterialize(source);
 
     final QueryContext queryContext = QueryContext.Stacker.of(
         source.getProperties().getQueryContext())
@@ -231,6 +240,28 @@ final class SourceBuilder extends SourceBuilderBase{
     );
   }
 
+  private static PhysicalSchema getPhysicalSchemaWithPseudoColumnsToMaterialize(
+      final SourceStep<?> streamSource) {
+
+    FormatInfo f = streamSource.getFormats().getKeyFormat();
+    SerdeFeatures s = streamSource.getFormats().getKeyFeatures();
+    KeyFormat k = streamSource instanceof WindowedTableSource
+        ? KeyFormat.windowed(f, s, ((WindowedTableSource) streamSource).getWindowInfo())
+        : KeyFormat.nonWindowed(f, s);
+
+    Formats format = of(k, streamSource.getFormats().getValueFormat());
+
+    LogicalSchema withPseudosToMaterialize
+        = streamSource.getSourceSchema().withPseudoColumnsToMaterialize(
+        false, streamSource.getPseudoColumnVersion());
+
+    return PhysicalSchema.from(
+        withPseudosToMaterialize,
+        format.getKeyFeatures(),
+        format.getValueFeatures()
+    );
+  }
+
   //todo: put this logic into TableSource and WindowedTableSource
   private static Formats of(final KeyFormat keyFormat, final FormatInfo valueFormat) {
 
@@ -240,6 +271,118 @@ final class SourceBuilder extends SourceBuilderBase{
         keyFormat.getFeatures(),
         SerdeFeatures.of()
     );
+  }
+
+  private static class AddRemainingPseudoAndKeyCols<K>
+      implements ValueTransformerWithKeySupplier<K, GenericRow, GenericRow> {
+
+    private final Function<K, Collection<?>> keyGenerator;
+    private final int pseudoColumnVersion;
+
+    AddRemainingPseudoAndKeyCols(
+        final Function<K, Collection<?>> keyGenerator, final int pseudoColumnVersion) {
+      this.keyGenerator = requireNonNull(keyGenerator, "keyGenerator");
+      this.pseudoColumnVersion = pseudoColumnVersion;
+    }
+
+    @Override
+    public ValueTransformerWithKey<K, GenericRow, GenericRow> get() {
+      return new ValueTransformerWithKey<K, GenericRow, GenericRow>() {
+        private ProcessorContext processorContext;
+
+        @Override
+        public void init(final ProcessorContext processorContext) {
+          this.processorContext = requireNonNull(processorContext, "processorContext");
+        }
+
+        @Override
+        public GenericRow transform(final K key, final GenericRow row) {
+          if (row == null) {
+            return row;
+          }
+
+          final Collection<?> keyColumns = keyGenerator.apply(key);
+
+          //remove pseudocolumns we previously materialized so we can add them back in correct order
+
+          //ensure extra capacity equal to number of pseudoColumns which we haven't materialized
+          final int pseudoColumnsToAdd = SystemColumns.pseudoColumnNames(
+              SystemColumns.ROWTIME_PSEUDOCOLUMN_VERSION).size();
+
+          row.ensureAdditionalCapacity(pseudoColumnsToAdd);
+
+          //calculate number of user columns and
+          final int totalPseudoColumns = SystemColumns.pseudoColumnNames(pseudoColumnVersion).size();
+          final int pseudoColumnsToShift = totalPseudoColumns - pseudoColumnsToAdd;
+          final int numUserColumns = row.size() - pseudoColumnsToShift;
+
+          Object toShift = processorContext.timestamp();
+
+          for (int i = numUserColumns; i < row.size(); i++) {
+            Object temp = row.get(i);
+            row.set(i, toShift);
+            toShift = temp;
+          }
+
+          row.append(toShift);
+
+          row.appendAll(keyColumns);
+          return row;
+        }
+
+        @Override
+        public void close() {
+        }
+      };
+    }
+  }
+
+
+  private static class AddPseudoColumnsToMaterialize<K>
+      implements ValueTransformerWithKeySupplier<K, GenericRow, GenericRow> {
+
+    private final int pseudoColumnVersion;
+
+    AddPseudoColumnsToMaterialize(final int pseudoColumnVersion) {
+      this.pseudoColumnVersion = pseudoColumnVersion;
+    }
+
+    @Override
+    public ValueTransformerWithKey<K, GenericRow, GenericRow> get() {
+      return new ValueTransformerWithKey<K, GenericRow, GenericRow>() {
+        private ProcessorContext processorContext;
+
+        @Override
+        public void init(final ProcessorContext processorContext) {
+          this.processorContext = requireNonNull(processorContext, "processorContext");
+        }
+
+        @Override
+        public GenericRow transform(final K key, final GenericRow row) {
+          if (row == null) {
+            return row;
+          }
+
+          final int numPseudoColumns = SystemColumns
+              .pseudoColumnNames(pseudoColumnVersion).size();
+
+          row.ensureAdditionalCapacity(numPseudoColumns - 1);
+
+          if (pseudoColumnVersion >= SystemColumns.ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION) {
+            final int partition = processorContext.partition();
+            final long offset = processorContext.offset();
+            row.append(partition);
+            row.append(offset);
+          }
+
+          return row;
+        }
+
+        @Override
+        public void close() {
+        }
+      };
+    }
   }
 
 }
