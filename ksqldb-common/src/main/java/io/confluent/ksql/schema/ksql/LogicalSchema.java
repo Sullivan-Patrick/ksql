@@ -173,10 +173,19 @@ public final class LogicalSchema {
     return withoutPseudoAndKeyColsInValue(CURRENT_PSEUDOCOLUMN_VERSION_NUMBER);
   }
 
-  public LogicalSchema withPseudoColumnsToMaterialize(final boolean windowed) {
-    return withPseudoColumnsToMaterialize(windowed, CURRENT_PSEUDOCOLUMN_VERSION_NUMBER);
-  }
-
+  /**
+   * Adds just the pseudocolumns that must be materialized as part of a join involving a table.
+   * As of pseudocolumn version {@code SystemColumns.ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION},
+   * there are only two pseudocolumns that fall under this definition: {@code ROWPARTITION} and
+   * {@code ROWOFFSET}.
+   *
+   * @param windowed indicates that the source is windowed; meaning {@code WINDOWSTART} and {@code
+   * WINDOWEND} columns will added to the value schema to represent the window bounds.
+   *
+   * @param pseudoColumnVersion the version of pseudocolumns to evaluate against
+   *
+   * @return the new schema with the columns removed
+   */
   public LogicalSchema withPseudoColumnsToMaterialize(final boolean windowed, final int pseudoColumnVersion) {
     return rebuildWithPseudoColumnsToMaterialize(windowed, pseudoColumnVersion);
   }
