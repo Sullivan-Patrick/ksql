@@ -179,15 +179,12 @@ public final class LogicalSchema {
    * there are only two pseudocolumns that fall under this definition: {@code ROWPARTITION} and
    * {@code ROWOFFSET}.
    *
-   * @param windowed indicates that the source is windowed; meaning {@code WINDOWSTART} and {@code
-   * WINDOWEND} columns will added to the value schema to represent the window bounds.
-   *
    * @param pseudoColumnVersion the version of pseudocolumns to evaluate against
    *
    * @return the new schema with the columns removed
    */
-  public LogicalSchema withPseudoColumnsToMaterialize(final boolean windowed, final int pseudoColumnVersion) {
-    return rebuildWithPseudoColumnsToMaterialize(windowed, pseudoColumnVersion);
+  public LogicalSchema withPseudoColumnsToMaterialize(final int pseudoColumnVersion) {
+    return rebuildWithPseudoColumnsToMaterialize(pseudoColumnVersion);
   }
 
   /**
@@ -336,6 +333,7 @@ public final class LogicalSchema {
 
   /**
    * Rebuilds schema without pseudocolumns or key columns
+   * @param pseudoColumnVersion indicates which set of pseudocolumns should be used
    * @return the LogicalSchema created, with the corresponding pseudo and key columns excluded
    */
   private LogicalSchema rebuildWithoutPseudoAndKeyColsInValue(final int pseudoColumnVersion) {
@@ -353,18 +351,29 @@ public final class LogicalSchema {
     return new LogicalSchema(builder.build());
   }
 
-  private LogicalSchema rebuildWithPseudoColumnsToMaterialize(
-      final boolean windowedKey, final int pseudoColumnVersion) {
+  /**
+   * Rebuilds schema with only certain pseudocolumns to materialize in an intermittent store
+   * @param pseudoColumnVersion indicates which set of pseudocolumns should be used
+   * @return the LogicalSchema created, with the corresponding pseudocolumns
+   */
+  private LogicalSchema rebuildWithPseudoColumnsToMaterialize(final int pseudoColumnVersion) {
     final Map<Namespace, List<Column>> byNamespace = byNamespace();
-
-    final List<Column> key = byNamespace.get(Namespace.KEY);
 
     final ImmutableList.Builder<Column> builder = ImmutableList.builder();
 
-    addKeyColumnsToKeySchema(builder);
+    final List<Column> keyColumns = keyColumns(byNamespace);
 
-    int valueIndex = addNonPseudoAndKeyColsToValueSchema(builder, pseudoColumnVersion);
+    final List<Column> nonPseudoAndKeyCols = nonPseudoAndKeyColsAsValueCols(
+        byNamespace, pseudoColumnVersion);
 
+    int valueIndex = nonPseudoAndKeyCols.size();
+
+    builder.addAll(keyColumns);
+    builder.addAll(nonPseudoAndKeyCols);
+
+    //put all pseudocolumns which are not able to be accessed via processorContext after a join,
+    //and therefore require materialization, in a conditional block corresponding to their
+    //pseudocolumn version number
     if (pseudoColumnVersion >= ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION) {
       builder.add(Column.of(ROWPARTITION_NAME, ROWPARTITION_TYPE, VALUE, valueIndex++));
       builder.add(Column.of(ROWOFFSET_NAME, ROWOFFSET_TYPE, VALUE, valueIndex++));
