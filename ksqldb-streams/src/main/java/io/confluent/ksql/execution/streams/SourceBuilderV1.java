@@ -15,8 +15,10 @@
 package io.confluent.ksql.execution.streams;
 
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.AddKeyAndPseudoColumns;
+import static io.confluent.ksql.execution.streams.SourceBuilderUtils.getKeySerde;
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.buildSchema;
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.buildSourceConsumed;
+import static io.confluent.ksql.execution.streams.SourceBuilderUtils.getWindowedKeySerde;
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.changelogTopic;
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.getPhysicalSchema;
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.getRegisterCallback;
@@ -33,7 +35,6 @@ import io.confluent.ksql.execution.plan.SourceStep;
 import io.confluent.ksql.execution.plan.StreamSource;
 import io.confluent.ksql.execution.plan.TableSourceV1;
 import io.confluent.ksql.execution.plan.WindowedStreamSource;
-import io.confluent.ksql.execution.plan.WindowedTableSource;
 import io.confluent.ksql.execution.plan.WindowedTableSourceV1;
 import io.confluent.ksql.execution.runtime.RuntimeBuildContext;
 import io.confluent.ksql.schema.ksql.LogicalSchema;
@@ -54,9 +55,9 @@ import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.kstream.Windowed;
 import org.apache.kafka.streams.state.KeyValueStore;
 
-final class SourceBuilderV1 extends SourceBuilderBase{
+final class SourceBuilderV1 extends SourceBuilderBase {
 
-  private final static SourceBuilderV1 instance;
+  private static final SourceBuilderV1 instance;
 
   static {
     instance = new SourceBuilderV1();
@@ -78,10 +79,10 @@ final class SourceBuilderV1 extends SourceBuilderBase{
 
     final Serde<GenericRow> valueSerde = getValueSerde(buildContext, source, physicalSchema);
 
-    final Serde<GenericKey> keySerde = buildContext.buildKeySerde(
-        source.getFormats().getKeyFormat(),
+    final Serde<GenericKey> keySerde = getKeySerde(
+        source,
         physicalSchema,
-        source.getProperties().getQueryContext()
+        buildContext
     );
 
     final Consumed<GenericKey, GenericRow> consumed = buildSourceConsumed(
@@ -117,11 +118,11 @@ final class SourceBuilderV1 extends SourceBuilderBase{
     final Serde<GenericRow> valueSerde = getValueSerde(buildContext, source, physicalSchema);
 
     final WindowInfo windowInfo = source.getWindowInfo();
-    final Serde<Windowed<GenericKey>> keySerde = buildContext.buildKeySerde(
-        source.getFormats().getKeyFormat(),
-        windowInfo,
+    final Serde<Windowed<GenericKey>> keySerde = getWindowedKeySerde(
+        source,
         physicalSchema,
-        source.getProperties().getQueryContext()
+        buildContext,
+        windowInfo
     );
 
     final Consumed<Windowed<GenericKey>, GenericRow> consumed = buildSourceConsumed(
@@ -147,47 +148,36 @@ final class SourceBuilderV1 extends SourceBuilderBase{
     );
   }
 
-  private <K> KStream<K, GenericRow> buildKStream(
-      final SourceStep<?> streamSource,
-      final RuntimeBuildContext buildContext,
-      final Consumed<K, GenericRow> consumed,
-      final Function<K, Collection<?>> keyGenerator
-  ) {
-    final KStream<K, GenericRow> stream = buildContext.getStreamsBuilder()
-        .stream(streamSource.getTopicName(), consumed);
-
-    final int pseudoColumnVersion = streamSource.getPseudoColumnVersion();
-    return stream
-        .transformValues(new AddKeyAndPseudoColumns<>(keyGenerator, pseudoColumnVersion));
-  }
-
   @Override
   public Materialized<GenericKey, GenericRow, KeyValueStore<Bytes, byte[]>> buildTableMaterialized(
       final SourceStep<KTableHolder<GenericKey>> source,
       final RuntimeBuildContext buildContext,
       final MaterializedFactory materializedFactory,
       final Serde<GenericKey> keySerde,
-      final Serde<GenericRow> valueSerde
+      final Serde<GenericRow> valueSerde,
+      final String stateStoreName
   ) {
     return materializedFactory.create(
         keySerde,
         valueSerde,
-        SourceBuilderUtils.tableChangeLogOpName(source.getProperties())
+        stateStoreName
     );
   }
 
   @Override
-  public Materialized<Windowed<GenericKey>, GenericRow, KeyValueStore<Bytes, byte[]>> buildWindowedTableMaterialized(
+  public Materialized<Windowed<GenericKey>, GenericRow, KeyValueStore<Bytes, byte[]>>
+      buildWindowedTableMaterialized(
       final SourceStep<KTableHolder<Windowed<GenericKey>>> source,
       final RuntimeBuildContext buildContext,
       final MaterializedFactory materializedFactory,
       final Serde<Windowed<GenericKey>> keySerde,
-      final Serde<GenericRow> valueSerde
-      ) {
+      final Serde<GenericRow> valueSerde,
+      final String stateStoreName
+  ) {
     return materializedFactory.create(
         keySerde,
         valueSerde,
-        SourceBuilderUtils.tableChangeLogOpName(source.getProperties())
+        stateStoreName
     );
   }
 
@@ -272,6 +262,20 @@ final class SourceBuilderV1 extends SourceBuilderBase{
     );
   }
 
+  private <K> KStream<K, GenericRow> buildKStream(
+      final SourceStep<?> streamSource,
+      final RuntimeBuildContext buildContext,
+      final Consumed<K, GenericRow> consumed,
+      final Function<K, Collection<?>> keyGenerator
+  ) {
+    final KStream<K, GenericRow> stream = buildContext.getStreamsBuilder()
+        .stream(streamSource.getTopicName(), consumed);
+
+    final int pseudoColumnVersion = streamSource.getPseudoColumnVersion();
+    return stream
+        .transformValues(new AddKeyAndPseudoColumns<>(keyGenerator, pseudoColumnVersion));
+  }
+
   private static Function<GenericKey, Collection<?>> nonWindowedKeyGenerator(
       final LogicalSchema schema
   ) {
@@ -279,7 +283,8 @@ final class SourceBuilderV1 extends SourceBuilderBase{
     return key -> key == null ? nullKey.values() : key.values();
   }
 
-  private static void validateNotUsingOldExecutionStepWithNewQueries(final SourceStep<?> streamSource) {
+  private static void validateNotUsingOldExecutionStepWithNewQueries(
+      final SourceStep<?> streamSource) {
     final boolean oldTable =
         streamSource instanceof TableSourceV1
             || streamSource instanceof  WindowedTableSourceV1;

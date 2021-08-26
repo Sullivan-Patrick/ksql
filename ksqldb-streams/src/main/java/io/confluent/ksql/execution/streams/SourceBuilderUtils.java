@@ -1,3 +1,17 @@
+/*
+ * Copyright 2021 Confluent Inc.
+ *
+ * Licensed under the Confluent Community License; you may not use this file
+ * except in compliance with the License.  You may obtain a copy of the License at
+ *
+ * http://www.confluent.io/confluent-community-license
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OF ANY KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
 package io.confluent.ksql.execution.streams;
 
 import static java.util.Objects.requireNonNull;
@@ -20,6 +34,7 @@ import io.confluent.ksql.serde.FormatFactory;
 import io.confluent.ksql.serde.FormatInfo;
 import io.confluent.ksql.serde.SerdeFeature;
 import io.confluent.ksql.serde.StaticTopicSerde;
+import io.confluent.ksql.serde.WindowInfo;
 import io.confluent.ksql.util.KsqlConfig;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -41,16 +56,18 @@ import org.apache.kafka.streams.kstream.Windowed;
 import org.apache.kafka.streams.processor.ProcessorContext;
 import org.apache.kafka.streams.processor.TimestampExtractor;
 
-public class SourceBuilderUtils {
+final class SourceBuilderUtils {
 
-  protected static final Collection<?> NULL_WINDOWED_KEY_COLUMNS = Collections.unmodifiableList(
+  private static final String MATERIALIZE_OP_NAME = "Materialized";
+
+  private static final Collection<?> NULL_WINDOWED_KEY_COLUMNS = Collections.unmodifiableList(
       Arrays.asList(null, null, null)
   );
 
   private SourceBuilderUtils() {
   }
 
-  protected static LogicalSchema buildSchema(
+  static LogicalSchema buildSchema(
       final SourceStep<?> source,
       final boolean windowed
   ) {
@@ -59,18 +76,89 @@ public class SourceBuilderUtils {
         .withPseudoAndKeyColsInValue(windowed, source.getPseudoColumnVersion());
   }
 
-  protected static Serde<GenericRow> getValueSerde(
+  static Serde<GenericRow> getValueSerde(
       final RuntimeBuildContext buildContext,
       final SourceStep<?> streamSource,
-      final PhysicalSchema physicalSchema) {
+      final PhysicalSchema physicalSchema,
+      final QueryContext queryContext
+  ) {
     return buildContext.buildValueSerde(
         streamSource.getFormats().getValueFormat(),
+        physicalSchema,
+        queryContext
+    );
+  }
+
+  static Serde<GenericRow> getValueSerde(
+      final RuntimeBuildContext buildContext,
+      final SourceStep<?> streamSource,
+      final PhysicalSchema physicalSchema
+  ) {
+    return getValueSerde(
+        buildContext,
+        streamSource,
         physicalSchema,
         streamSource.getProperties().getQueryContext()
     );
   }
 
-  protected static PhysicalSchema getPhysicalSchema(final SourceStep<?> streamSource) {
+  static Serde<GenericKey> getKeySerde(
+      final SourceStep<?> step,
+      final PhysicalSchema physicalSchema,
+      final RuntimeBuildContext buildContext,
+      final QueryContext queryContext
+  ) {
+    return buildContext.buildKeySerde(
+        step.getFormats().getKeyFormat(),
+        physicalSchema,
+        queryContext
+    );
+  }
+
+  static Serde<GenericKey> getKeySerde(
+      final SourceStep<?> step,
+      final PhysicalSchema physicalSchema,
+      final RuntimeBuildContext buildContext
+  ) {
+    return getKeySerde(
+        step,
+        physicalSchema,
+        buildContext,
+        step.getProperties().getQueryContext()
+    );
+  }
+
+  static Serde<Windowed<GenericKey>> getWindowedKeySerde(
+      final SourceStep<?> step,
+      final PhysicalSchema physicalSchema,
+      final RuntimeBuildContext buildContext,
+      final WindowInfo windowInfo,
+      final QueryContext queryContext
+  ) {
+    return buildContext.buildKeySerde(
+        step.getFormats().getKeyFormat(),
+        windowInfo,
+        physicalSchema,
+        queryContext
+    );
+  }
+
+  static Serde<Windowed<GenericKey>> getWindowedKeySerde(
+      final SourceStep<?> step,
+      final PhysicalSchema physicalSchema,
+      final RuntimeBuildContext buildContext,
+      final WindowInfo windowInfo
+  ) {
+    return getWindowedKeySerde(
+        step,
+        physicalSchema,
+        buildContext,
+        windowInfo,
+        step.getProperties().getQueryContext()
+    );
+  }
+
+  static PhysicalSchema getPhysicalSchema(final SourceStep<?> streamSource) {
     return PhysicalSchema.from(
         streamSource.getSourceSchema(),
         streamSource.getFormats().getKeyFeatures(),
@@ -78,7 +166,7 @@ public class SourceBuilderUtils {
     );
   }
 
-  protected static StaticTopicSerde.Callback getRegisterCallback(
+  static StaticTopicSerde.Callback getRegisterCallback(
       final RuntimeBuildContext buildContext,
       final FormatInfo valueFormat
   ) {
@@ -105,7 +193,7 @@ public class SourceBuilderUtils {
    *    applicationID + "-" + stateStoreName + "-changelog".
    * </pre>
    */
-  protected static String changelogTopic(
+  static String changelogTopic(
       final RuntimeBuildContext buildContext,
       final String stateStoreName
   ) {
@@ -115,8 +203,7 @@ public class SourceBuilderUtils {
         + "-changelog";
   }
 
-
-  protected static TimestampExtractor timestampExtractor(
+  static TimestampExtractor timestampExtractor(
       final KsqlConfig ksqlConfig,
       final LogicalSchema sourceSchema,
       final Optional<TimestampColumn> timestampColumn,
@@ -141,7 +228,7 @@ public class SourceBuilderUtils {
     );
   }
 
-  protected static <K> Consumed<K, GenericRow> buildSourceConsumed(
+  static <K> Consumed<K, GenericRow> buildSourceConsumed(
       final SourceStep<?> streamSource,
       final Serde<K> keySerde,
       final Serde<GenericRow> valueSerde,
@@ -161,7 +248,7 @@ public class SourceBuilderUtils {
     return consumed.withOffsetResetPolicy(getAutoOffsetReset(defaultReset, buildContext));
   }
 
-  protected static String tableChangeLogOpName(final ExecutionStepPropertiesV1 props) {
+  static String tableChangeLogOpName(final ExecutionStepPropertiesV1 props) {
     final List<String> parts = props.getQueryContext().getContext();
     Stacker stacker = new Stacker();
     for (final String part : parts.subList(0, parts.size() - 1)) {
@@ -170,7 +257,7 @@ public class SourceBuilderUtils {
     return StreamsUtil.buildOpName(stacker.push("Reduce").getQueryContext());
   }
 
-  protected static Function<Windowed<GenericKey>, Collection<?>> windowedKeyGenerator(
+  static Function<Windowed<GenericKey>, Collection<?>> windowedKeyGenerator(
       final LogicalSchema schema
   ) {
     if (schema.key().isEmpty()) {
@@ -193,7 +280,7 @@ public class SourceBuilderUtils {
     };
   }
 
-  protected static Topology.AutoOffsetReset getAutoOffsetReset(
+  static Topology.AutoOffsetReset getAutoOffsetReset(
       final Topology.AutoOffsetReset defaultValue,
       final RuntimeBuildContext buildContext) {
     final Object offestReset = buildContext.getKsqlConfig()
@@ -214,7 +301,13 @@ public class SourceBuilderUtils {
     }
   }
 
-  protected static class AddKeyAndPseudoColumns<K>
+  static QueryContext addMaterializedContext(SourceStep<?> step) {
+    return QueryContext.Stacker.of(
+        step.getProperties().getQueryContext())
+        .push(MATERIALIZE_OP_NAME).getQueryContext();
+  }
+
+  static class AddKeyAndPseudoColumns<K>
       implements ValueTransformerWithKeySupplier<K, GenericRow, GenericRow> {
 
     private final Function<K, Collection<?>> keyGenerator;

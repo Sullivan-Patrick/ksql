@@ -62,6 +62,7 @@ import io.confluent.ksql.test.parser.SqlTestLoader;
 import io.confluent.ksql.test.parser.TestDirective;
 import io.confluent.ksql.test.parser.TestStatement;
 import io.confluent.ksql.test.tools.TestFunctionRegistry;
+import io.confluent.ksql.test.util.KsqlTestFolder;
 import io.confluent.ksql.util.KsqlConfig;
 import io.confluent.ksql.util.KsqlException;
 import io.confluent.ksql.util.PersistentQueryMetadata;
@@ -108,7 +109,7 @@ public class KsqlTesterTest {
       .build();
 
   @Rule
-  public final TemporaryFolder tmpFolder = TemporaryFolder.builder().build();
+  public final TemporaryFolder tmpFolder = KsqlTestFolder.temporaryFolder();
 
   // parameterized
   private final Path file;
@@ -260,7 +261,9 @@ public class KsqlTesterTest {
         .map(ds -> new TopicInfo(ds.getKafkaTopicName(), keySerde(ds), valueSerde(ds)))
         .collect(Collectors.toList());
 
-    final DataSource output = engine.getMetaStore().getSource(query.getSinkName());
+    // Sink may be Optional for source tables. Once source table query execution is supported, then
+    // we would need have a condition to not create an output topic info
+    final DataSource output = engine.getMetaStore().getSource(query.getSinkName().get());
     final TopicInfo outputInfo = new TopicInfo(
         output.getKafkaTopicName(),
         keySerde(output),

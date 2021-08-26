@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Confluent Inc.
+ * Copyright 2021 Confluent Inc.
  *
  * Licensed under the Confluent Community License; you may not use this file
  * except in compliance with the License.  You may obtain a copy of the License at
@@ -15,9 +15,14 @@
 package io.confluent.ksql.execution.streams;
 
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.AddKeyAndPseudoColumns;
+import static io.confluent.ksql.execution.streams.SourceBuilderUtils.addMaterializedContext;
+import static io.confluent.ksql.execution.streams.SourceBuilderUtils.getKeySerde;
+import static io.confluent.ksql.execution.streams.SourceBuilderUtils.buildSchema;
+import static io.confluent.ksql.execution.streams.SourceBuilderUtils.getWindowedKeySerde;
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.changelogTopic;
 import static io.confluent.ksql.execution.streams.SourceBuilderUtils.getRegisterCallback;
 import static java.util.Objects.requireNonNull;
+import static io.confluent.ksql.execution.streams.SourceBuilderUtils.getValueSerde;
 
 import io.confluent.ksql.GenericKey;
 import io.confluent.ksql.GenericRow;
@@ -36,9 +41,7 @@ import io.confluent.ksql.serde.KeyFormat;
 import io.confluent.ksql.serde.SerdeFeatures;
 import io.confluent.ksql.serde.StaticTopicSerde;
 import io.confluent.ksql.serde.StaticTopicSerde.Callback;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 import java.util.function.Function;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.utils.Bytes;
@@ -51,9 +54,9 @@ import org.apache.kafka.streams.kstream.Windowed;
 import org.apache.kafka.streams.processor.ProcessorContext;
 import org.apache.kafka.streams.state.KeyValueStore;
 
-final class SourceBuilder extends SourceBuilderBase{
+final class SourceBuilder extends SourceBuilderBase {
 
-  private final static SourceBuilder instance;
+  private static final SourceBuilder instance;
 
   static {
     instance = new SourceBuilder();
@@ -77,10 +80,7 @@ final class SourceBuilder extends SourceBuilderBase{
       final String stateStoreName,
       final PlanInfo planInfo
   ) {
-
-    final KTable<K, GenericRow> table;
-
-      final KTable<K, GenericRow> source = buildContext
+    final KTable<K, GenericRow> source = buildContext
           .getStreamsBuilder()
           .table(streamSource.getTopicName(), consumed);
 
@@ -89,23 +89,25 @@ final class SourceBuilder extends SourceBuilderBase{
       final KTable<K, GenericRow> transformed = source.transformValues(
           new AddPseudoColumnsToMaterialize<>(streamSource.getPseudoColumnVersion()));
 
+      final KTable<K, GenericRow> toPotentiallyMaterialize;
+
       if (forceMaterialization) {
         // add this identity mapValues call to prevent the source-changelog
         // optimization in kafka streams - we don't want this optimization to
         // be enabled because we cannot require symmetric serialization between
         // producer and KSQL (see https://issues.apache.org/jira/browse/KAFKA-10179
         // and https://github.com/confluentinc/ksql/issues/5673 for more details)
-        table = transformed.mapValues(row -> row, materialized);
+        toPotentiallyMaterialize = transformed.mapValues(row -> row, materialized);
       } else {
         // if we know this table source is repartitioned later in the topology,
         // we do not need to force a materialization at this source step since the
         // re-partitioned topic will be used for any subsequent state stores, in lieu
         // of the original source topic, thus avoiding the issues above.
         // See https://github.com/confluentinc/ksql/issues/6650
-        table = transformed.mapValues(row -> row);
+        toPotentiallyMaterialize = transformed.mapValues(row -> row);
       }
 
-    return table.transformValues(new AddRemainingPseudoAndKeyCols<>(
+    return toPotentiallyMaterialize.transformValues(new AddRemainingPseudoAndKeyCols<>(
         keyGenerator,
         streamSource.getPseudoColumnVersion()));
   }
@@ -124,17 +126,15 @@ final class SourceBuilder extends SourceBuilderBase{
     final Callback onFailure = getRegisterCallback(
         buildContext, streamSource.getFormats().getValueFormat());
 
-    final KTable<K, GenericRow> table = buildContext
+    final KTable<K, GenericRow> source = buildContext
         .getStreamsBuilder()
         .table(
             streamSource.getTopicName(),
-            consumed.withValueSerde(StaticTopicSerde.wrap(changelogTopic, valueSerde, onFailure)),
-            materialized
+            consumed.withValueSerde(StaticTopicSerde.wrap(changelogTopic, valueSerde, onFailure))
         );
 
-    return table
-        .transformValues(new AddKeyAndPseudoColumns<>(
-            keyGenerator, streamSource.getPseudoColumnVersion()));
+    return source.transformValues(new AddKeyAndPseudoColumns<>(
+        keyGenerator, streamSource.getPseudoColumnVersion()), materialized);
   }
 
   @Override
@@ -142,79 +142,70 @@ final class SourceBuilder extends SourceBuilderBase{
       final SourceStep<KTableHolder<GenericKey>> source,
       final RuntimeBuildContext buildContext,
       final MaterializedFactory materializedFactory,
-      final Serde<GenericKey> doNotUse,
-      final Serde<GenericRow> doNotUse2
+      final Serde<GenericKey> sourceKeySerde,
+      final Serde<GenericRow> sourceValueSerde,
+      final String stateStoreName
   ) {
-
-    final String stateStoreName = SourceBuilderUtils.tableChangeLogOpName(source.getProperties());
 
     final PhysicalSchema physicalSchema = getPhysicalSchemaWithPseudoColumnsToMaterialize(source);
 
-    final QueryContext queryContext = QueryContext.Stacker.of(
-        source.getProperties().getQueryContext())
-        .push("Materialize").getQueryContext();
+    final QueryContext queryContext = addMaterializedContext(source);
 
-    final Serde<GenericRow> valueSerde = getValueSerdeWithAdditionalQueryContext(
-        buildContext, source, physicalSchema, queryContext);
-
-    final Serde<GenericKey> keySerde = buildContext.buildKeySerde(
-        source.getFormats().getKeyFormat(),
+    final Serde<GenericRow> valueSerdeToMaterialize = getValueSerde(
+        buildContext,
+        source,
         physicalSchema,
         queryContext
     );
 
+    final Serde<GenericKey> keySerdeToMaterialize = getKeySerde(
+        source,
+        physicalSchema,
+        buildContext,
+        queryContext
+    );
+
     return materializedFactory.create(
-        keySerde,
-        valueSerde,
+        keySerdeToMaterialize,
+        valueSerdeToMaterialize,
         stateStoreName
     );
   }
 
   @Override
   Materialized<Windowed<GenericKey>, GenericRow, KeyValueStore<Bytes, byte[]>>
-  buildWindowedTableMaterialized(
+      buildWindowedTableMaterialized(
       final SourceStep<KTableHolder<Windowed<GenericKey>>> source,
       final RuntimeBuildContext buildContext,
       final MaterializedFactory materializedFactory,
-      final Serde<Windowed<GenericKey>> doNotUse,
-      final Serde<GenericRow> doNotUse2
+      final Serde<Windowed<GenericKey>> sourceKeySerde,
+      final Serde<GenericRow> sourceValueSerde,
+      final String stateStoreName
   ) {
-
-    final String stateStoreName = SourceBuilderUtils.tableChangeLogOpName(source.getProperties());
 
     final PhysicalSchema physicalSchema = getPhysicalSchemaWithKeyAndPseudoCols(source);
 
-    final QueryContext queryContext = QueryContext.Stacker.of(
-        source.getProperties().getQueryContext())
-        .push("Materialize").getQueryContext();
+    final QueryContext queryContext = addMaterializedContext(source);
 
-    final Serde<GenericRow> valueSerde = getValueSerdeWithAdditionalQueryContext(
-        buildContext, source, physicalSchema, queryContext);
-
-    final Serde<Windowed<GenericKey>> keySerde = buildContext.buildKeySerde(
-        source.getFormats().getKeyFormat(),
-        ((WindowedTableSource) source).getWindowInfo(),
+    final Serde<GenericRow> valueSerdeToMaterialize = getValueSerde(
+        buildContext,
+        source,
         physicalSchema,
+        queryContext
+    );
+
+    final Serde<Windowed<GenericKey>> keySerdeToMaterialize = getWindowedKeySerde(
+        source,
+        physicalSchema,
+        buildContext,
+        ((WindowedTableSource) source).getWindowInfo(),
         queryContext
     );
 
     return materializedFactory.create(
-        keySerde,
-        valueSerde,
+        keySerdeToMaterialize,
+        valueSerdeToMaterialize,
         stateStoreName
-    );
-  }
-
-  private static Serde<GenericRow> getValueSerdeWithAdditionalQueryContext(
-      final RuntimeBuildContext buildContext,
-      final SourceStep<?> streamSource,
-      final PhysicalSchema physicalSchema,
-      final QueryContext queryContext) {
-
-    return buildContext.buildValueSerde(
-        streamSource.getFormats().getValueFormat(),
-        physicalSchema,
-        queryContext
     );
   }
 
@@ -233,8 +224,7 @@ final class SourceBuilder extends SourceBuilderBase{
     final Formats formats = of(keyFormat, streamSource.getFormats().getValueFormat());
 
     return PhysicalSchema.from(
-        streamSource.getSourceSchema().withPseudoAndKeyColsInValue(
-            windowed, streamSource.getPseudoColumnVersion()),
+        buildSchema(streamSource, windowed),
         formats.getKeyFeatures(),
         formats.getValueFeatures()
     );
@@ -253,7 +243,7 @@ final class SourceBuilder extends SourceBuilderBase{
 
     LogicalSchema withPseudosToMaterialize
         = streamSource.getSourceSchema().withPseudoColumnsToMaterialize(
-        false, streamSource.getPseudoColumnVersion());
+        streamSource.getPseudoColumnVersion());
 
     return PhysicalSchema.from(
         withPseudosToMaterialize,
@@ -271,6 +261,53 @@ final class SourceBuilder extends SourceBuilderBase{
         keyFormat.getFeatures(),
         SerdeFeatures.of()
     );
+  }
+
+  private static class AddPseudoColumnsToMaterialize<K>
+      implements ValueTransformerWithKeySupplier<K, GenericRow, GenericRow> {
+
+    private final int pseudoColumnVersion;
+
+    AddPseudoColumnsToMaterialize(final int pseudoColumnVersion) {
+      this.pseudoColumnVersion = pseudoColumnVersion;
+    }
+
+    @Override
+    public ValueTransformerWithKey<K, GenericRow, GenericRow> get() {
+      return new ValueTransformerWithKey<K, GenericRow, GenericRow>() {
+        private ProcessorContext processorContext;
+
+        @Override
+        public void init(final ProcessorContext processorContext) {
+          this.processorContext = requireNonNull(processorContext, "processorContext");
+        }
+
+        @Override
+        public GenericRow transform(final K key, final GenericRow row) {
+          if (row == null) {
+            return row;
+          }
+
+          final int numPseudoColumns = SystemColumns
+              .pseudoColumnNames(pseudoColumnVersion).size();
+
+          row.ensureAdditionalCapacity(numPseudoColumns - 1);
+
+          if (pseudoColumnVersion >= SystemColumns.ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION) {
+            final int partition = processorContext.partition();
+            final long offset = processorContext.offset();
+            row.append(partition);
+            row.append(offset);
+          }
+
+          return row;
+        }
+
+        @Override
+        public void close() {
+        }
+      };
+    }
   }
 
   private static class AddRemainingPseudoAndKeyCols<K>
@@ -327,54 +364,6 @@ final class SourceBuilder extends SourceBuilderBase{
           row.append(toShift);
 
           row.appendAll(keyColumns);
-          return row;
-        }
-
-        @Override
-        public void close() {
-        }
-      };
-    }
-  }
-
-
-  private static class AddPseudoColumnsToMaterialize<K>
-      implements ValueTransformerWithKeySupplier<K, GenericRow, GenericRow> {
-
-    private final int pseudoColumnVersion;
-
-    AddPseudoColumnsToMaterialize(final int pseudoColumnVersion) {
-      this.pseudoColumnVersion = pseudoColumnVersion;
-    }
-
-    @Override
-    public ValueTransformerWithKey<K, GenericRow, GenericRow> get() {
-      return new ValueTransformerWithKey<K, GenericRow, GenericRow>() {
-        private ProcessorContext processorContext;
-
-        @Override
-        public void init(final ProcessorContext processorContext) {
-          this.processorContext = requireNonNull(processorContext, "processorContext");
-        }
-
-        @Override
-        public GenericRow transform(final K key, final GenericRow row) {
-          if (row == null) {
-            return row;
-          }
-
-          final int numPseudoColumns = SystemColumns
-              .pseudoColumnNames(pseudoColumnVersion).size();
-
-          row.ensureAdditionalCapacity(numPseudoColumns - 1);
-
-          if (pseudoColumnVersion >= SystemColumns.ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION) {
-            final int partition = processorContext.partition();
-            final long offset = processorContext.offset();
-            row.append(partition);
-            row.append(offset);
-          }
-
           return row;
         }
 

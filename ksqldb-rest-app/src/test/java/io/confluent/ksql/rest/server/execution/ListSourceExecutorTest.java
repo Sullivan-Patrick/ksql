@@ -113,7 +113,7 @@ public class ListSourceExecutorTest {
             SESSION_PROPERTIES,
             engine.getEngine(),
             engine.getServiceContext()
-        ).orElseThrow(IllegalStateException::new);
+        ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then:
     assertThat(descriptionList.getStreams(), containsInAnyOrder(
@@ -149,7 +149,7 @@ public class ListSourceExecutorTest {
             SESSION_PROPERTIES,
             engine.getEngine(),
             engine.getServiceContext()
-        ).orElseThrow(IllegalStateException::new);
+        ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then:
     assertThat(descriptionList.getSourceDescriptions(), containsInAnyOrder(
@@ -187,7 +187,7 @@ public class ListSourceExecutorTest {
             SESSION_PROPERTIES,
             engine.getEngine(),
             engine.getServiceContext()
-        ).orElseThrow(IllegalStateException::new);
+        ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then:
     assertThat(descriptionList.getSourceDescriptions(), containsInAnyOrder(
@@ -224,7 +224,7 @@ public class ListSourceExecutorTest {
             SESSION_PROPERTIES,
             engine.getEngine(),
             engine.getServiceContext()
-        ).orElseThrow(IllegalStateException::new);
+        ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then:
     assertThat(descriptionList.getTables(), containsInAnyOrder(
@@ -260,7 +260,7 @@ public class ListSourceExecutorTest {
             SESSION_PROPERTIES,
             engine.getEngine(),
             engine.getServiceContext()
-        ).orElseThrow(IllegalStateException::new);
+        ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then:
     final KafkaTopicClient client = engine.getServiceContext().getTopicClient();
@@ -301,7 +301,7 @@ public class ListSourceExecutorTest {
             SESSION_PROPERTIES,
             engine.getEngine(),
             engine.getServiceContext()
-        ).orElseThrow(IllegalStateException::new);
+        ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then:
     assertThat(descriptionList.getSourceDescriptions(), containsInAnyOrder(
@@ -348,7 +348,7 @@ public class ListSourceExecutorTest {
             SESSION_PROPERTIES,
             engine.getEngine(),
             engine.getServiceContext()
-        ).orElseThrow(IllegalStateException::new);
+        ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then:
     final QueryStatusCount queryStatusCount = QueryStatusCount.fromStreamsStateCounts(
@@ -361,8 +361,8 @@ public class ListSourceExecutorTest {
             ImmutableList.of(),
             ImmutableList.of(new RunningQuery(
                 metadata.getStatementString(),
-                ImmutableSet.of(metadata.getSinkName().toString(FormatOptions.noEscape())),
-                ImmutableSet.of(metadata.getResultTopic().getKafkaTopicName()),
+                ImmutableSet.of(metadata.getSinkName().get().toString(FormatOptions.noEscape())),
+                ImmutableSet.of(metadata.getResultTopic().get().getKafkaTopicName()),
                 metadata.getQueryId(),
                 queryStatusCount,
                 KsqlConstants.KsqlQueryType.PERSISTENT)),
@@ -408,7 +408,7 @@ public class ListSourceExecutorTest {
         SESSION_PROPERTIES,
         engine.getEngine(),
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then:
     verify(spyTopicClient, never()).describeTopic(anyString());
@@ -466,7 +466,7 @@ public class ListSourceExecutorTest {
         SESSION_PROPERTIES,
         engine.getEngine(),
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then:
     assertSourceListWithWarning(entity, stream1, stream2);
@@ -486,7 +486,7 @@ public class ListSourceExecutorTest {
         SESSION_PROPERTIES,
         engine.getEngine(),
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then:
     assertSourceListWithWarning(entity, table1, table2);
@@ -505,7 +505,7 @@ public class ListSourceExecutorTest {
         SESSION_PROPERTIES,
         engine.getEngine(),
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then:
     assertThat(entity, instanceOf(SourceDescriptionEntity.class));

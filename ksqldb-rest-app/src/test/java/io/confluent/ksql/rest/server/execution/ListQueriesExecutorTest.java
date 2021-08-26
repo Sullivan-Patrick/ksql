@@ -63,6 +63,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsMetadata;
@@ -131,7 +132,7 @@ public class ListQueriesExecutorTest {
         mock(SessionProperties.class),
         engine.getEngine(),
         engine.getServiceContext()
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     assertThat(queries.getQueries(), is(empty()));
   }
@@ -152,7 +153,7 @@ public class ListQueriesExecutorTest {
         sessionProperties,
         engine,
         this.engine.getServiceContext()
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     assertThat(queries.getQueries(), containsInAnyOrder(persistentQueryMetadataToRunningQuery(metadata, queryStatusCount)));
   }
@@ -187,7 +188,7 @@ public class ListQueriesExecutorTest {
         sessionProperties,
         engine,
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then
     assertThat(queries.getQueries(), containsInAnyOrder(persistentQueryMetadataToRunningQuery(localMetadata, queryStatusCount)));
@@ -220,7 +221,7 @@ public class ListQueriesExecutorTest {
         sessionProperties,
         engine,
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
     
     // Then
     assertThat(queries.getQueries(),
@@ -251,7 +252,7 @@ public class ListQueriesExecutorTest {
         sessionProperties,
         engine,
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then
     assertThat(queries.getQueries(), containsInAnyOrder(persistentQueryMetadataToRunningQuery(metadata, queryStatusCount)));
@@ -279,7 +280,7 @@ public class ListQueriesExecutorTest {
         sessionProperties,
         engine,
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then
     assertThat(queries.getQueries(), containsInAnyOrder(persistentQueryMetadataToRunningQuery(metadata, queryStatusCount)));
@@ -300,7 +301,7 @@ public class ListQueriesExecutorTest {
         sessionProperties,
         engine,
         this.engine.getServiceContext()
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then
     assertThat(queries.getQueryDescriptions(), containsInAnyOrder(
@@ -341,7 +342,7 @@ public class ListQueriesExecutorTest {
         sessionProperties,
         engine,
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then
     final QueryDescription mergedQueryDescription = QueryDescriptionFactory.forQueryMetadata(localMetadata, mergedMap);
@@ -378,7 +379,7 @@ public class ListQueriesExecutorTest {
         sessionProperties,
         engine,
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then
     assertThat(queries.getQueryDescriptions(),
@@ -412,7 +413,7 @@ public class ListQueriesExecutorTest {
         sessionProperties,
         engine,
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then
     assertThat(queries.getQueryDescriptions(),
@@ -443,7 +444,7 @@ public class ListQueriesExecutorTest {
         sessionProperties,
         engine,
         serviceContext
-    ).orElseThrow(IllegalStateException::new);
+    ).getEntity().orElseThrow(IllegalStateException::new);
 
     // Then
     assertThat(queries.getQueryDescriptions(),
@@ -465,12 +466,12 @@ public class ListQueriesExecutorTest {
     final PersistentQueryMetadata metadata = mock(PersistentQueryMetadata.class);
     mockQuery(id, state, metadata);
     when(metadata.getQueryType()).thenReturn(KsqlConstants.KsqlQueryType.PERSISTENT);
-    when(metadata.getSinkName()).thenReturn(SourceName.of(id));
+    when(metadata.getSinkName()).thenReturn(Optional.of(SourceName.of(id)));
     final KsqlTopic sinkTopic = mock(KsqlTopic.class);
     when(sinkTopic.getKeyFormat()).thenReturn(
         KeyFormat.nonWindowed(FormatInfo.of(FormatFactory.KAFKA.name()), SerdeFeatures.of()));
     when(sinkTopic.getKafkaTopicName()).thenReturn(id);
-    when(metadata.getResultTopic()).thenReturn(sinkTopic);
+    when(metadata.getResultTopic()).thenReturn(Optional.of(sinkTopic));
     when(metadata.getTaskMetadata()).thenReturn(tasksMetadata);
 
     return metadata;
@@ -516,8 +517,12 @@ public class ListQueriesExecutorTest {
   ) {
     return new RunningQuery(
         md.getStatementString(),
-        ImmutableSet.of(md.getSinkName().text()),
-        ImmutableSet.of(md.getResultTopic().getKafkaTopicName()),
+        md.getSinkName().isPresent()
+            ? ImmutableSet.of(md.getSinkName().get().text())
+            : ImmutableSet.of(),
+        md.getResultTopic().isPresent()
+            ? ImmutableSet.of(md.getResultTopic().get().getKafkaTopicName())
+            : ImmutableSet.of(),
         md.getQueryId(),
         queryStatusCount,
         md.getQueryType());

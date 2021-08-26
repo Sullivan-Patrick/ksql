@@ -18,7 +18,6 @@ package io.confluent.ksql.execution.streams;
 import static io.confluent.ksql.GenericRow.genericRow;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -39,7 +38,6 @@ import io.confluent.ksql.execution.context.QueryContext.Stacker;
 import io.confluent.ksql.execution.plan.ExecutionStep;
 import io.confluent.ksql.execution.plan.ExecutionStepPropertiesV1;
 import io.confluent.ksql.execution.plan.Formats;
-import io.confluent.ksql.execution.plan.KStreamHolder;
 import io.confluent.ksql.execution.plan.KTableHolder;
 import io.confluent.ksql.execution.plan.PlanBuilder;
 import io.confluent.ksql.execution.plan.PlanInfo;
@@ -468,7 +466,7 @@ public class SourceBuilderTest {
   @Test
   public void shouldAddPseudoColumnsAndTimeWindowedRowKeyColumnsToTable() {
     // Given:
-    givenWindowedSourceTable(SystemColumns.ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION);
+    givenWindowedSourceTable();
     final ValueTransformerWithKey<Windowed<GenericKey>, GenericRow, GenericRow> transformer =
         getTransformerFromTableSource(windowedTableSource);
 
@@ -590,7 +588,7 @@ public class SourceBuilderTest {
     transformer.init(processorCtx);
     return transformer;
   }
-  private void givenWindowedSourceTable(final int pseudoColumnVersion) {
+  private void givenWindowedSourceTable() {
     when(buildContext.buildKeySerde(any(), any(), any(), any())).thenReturn(windowedKeySerde);
     givenConsumed(consumedWindowed, windowedKeySerde);
     givenConsumed(consumedWindowed, windowedKeySerde);
@@ -601,15 +599,11 @@ public class SourceBuilderTest {
         windowInfo,
         TIMESTAMP_COLUMN,
         SOURCE_SCHEMA,
-        OptionalInt.of(pseudoColumnVersion)
+        OptionalInt.of(SystemColumns.ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION)
     );
   }
 
-  private void givenWindowedSourceTable() {
-    givenWindowedSourceTable(SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER);
-  }
-
-  private void givenUnwindowedSourceTable(final int pseudoColumnVersion) {
+  private void givenUnwindowedSourceTable() {
     when(buildContext.buildKeySerde(any(), any(), any())).thenReturn(keySerde);
     givenConsumed(consumed, keySerde);
     tableSource = new TableSource(
@@ -618,13 +612,8 @@ public class SourceBuilderTest {
         Formats.of(keyFormatInfo, valueFormatInfo, KEY_FEATURES, VALUE_FEATURES),
         TIMESTAMP_COLUMN,
         SOURCE_SCHEMA,
-        Optional.of(true),
-        OptionalInt.of(pseudoColumnVersion)
+        OptionalInt.of(SystemColumns.ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION)
     );
-  }
-
-  private void givenUnwindowedSourceTable() {
-    givenUnwindowedSourceTable(SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER);
   }
 
   private void givenMultiColumnSourceTable() {
@@ -636,8 +625,7 @@ public class SourceBuilderTest {
         Formats.of(keyFormatInfo, valueFormatInfo, KEY_FEATURES, VALUE_FEATURES),
         TIMESTAMP_COLUMN,
         MULTI_COL_SOURCE_SCHEMA,
-        Optional.of(true),
-        OptionalInt.of(SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER)
+        OptionalInt.of(SystemColumns.ROWPARTITION_ROWOFFSET_PSEUDOCOLUMN_VERSION)
     );
   }
 

@@ -69,6 +69,10 @@
         "orReplace" : {
           "type" : "boolean",
           "default" : false
+        },
+        "isSource" : {
+          "type" : "boolean",
+          "default" : false
         }
       },
       "title" : "createStreamV1",
@@ -179,6 +183,10 @@
           "$ref" : "#/definitions/WindowInfo"
         },
         "orReplace" : {
+          "type" : "boolean",
+          "default" : false
+        },
+        "isSource" : {
           "type" : "boolean",
           "default" : false
         }
@@ -766,8 +774,8 @@
       "properties" : {
         "@type" : {
           "type" : "string",
-          "enum" : [ "tableSourceV1" ],
-          "default" : "tableSourceV1"
+          "enum" : [ "tableSourceV2" ],
+          "default" : "tableSourceV2"
         },
         "properties" : {
           "$ref" : "#/definitions/ExecutionStepPropertiesV1"
@@ -783,9 +791,6 @@
         },
         "sourceSchema" : {
           "type" : "string"
-        },
-        "forceChangelog" : {
-          "type" : "boolean"
         }
       },
       "title" : "tableSourceV2",
@@ -1128,6 +1133,9 @@
         "leftJoinColumnName" : {
           "type" : "string"
         },
+        "leftJoinExpression" : {
+          "type" : "string"
+        },
         "formats" : {
           "$ref" : "#/definitions/Formats"
         },
@@ -1136,9 +1144,6 @@
         },
         "rightSource" : {
           "$ref" : "#/definitions/ExecutionStep"
-        },
-        "leftJoinExpression" : {
-          "type" : "string"
         }
       },
       "title" : "fkTableTableJoinV1",

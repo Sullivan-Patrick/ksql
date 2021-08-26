@@ -31,25 +31,20 @@ import javax.annotation.Nonnull;
 @Immutable
 public final class TableSource extends SourceStep<KTableHolder<GenericKey>> {
 
-  private final Boolean forceChangelog;
-
   private static final ImmutableList<Property> MUST_MATCH = ImmutableList.of(
       new Property("class", Object::getClass),
       new Property("properties", ExecutionStep::getProperties),
       new Property("topicName", s -> ((TableSource) s).topicName),
       new Property("formats", s -> ((TableSource) s).formats),
-      new Property("timestampColumn", s -> ((TableSource) s).timestampColumn),
-      new Property("forceChangelog", s -> ((TableSource) s).forceChangelog)
+      new Property("timestampColumn", s -> ((TableSource) s).timestampColumn)
   );
 
   public TableSource(
-      @JsonProperty(value = "properties", required = true)
-      final ExecutionStepPropertiesV1 props,
+      @JsonProperty(value = "properties", required = true) final ExecutionStepPropertiesV1 props,
       @JsonProperty(value = "topicName", required = true) final String topicName,
       @JsonProperty(value = "formats", required = true) final Formats formats,
       @JsonProperty("timestampColumn") final Optional<TimestampColumn> timestampColumn,
       @JsonProperty(value = "sourceSchema", required = true) final LogicalSchema sourceSchema,
-      @JsonProperty(value = "forceChangelog") final Optional<Boolean> forceChangelog,
       @JsonProperty("pseudoColumnVersion") final OptionalInt pseudoColumnVersion
   ) {
     super(
@@ -60,11 +55,6 @@ public final class TableSource extends SourceStep<KTableHolder<GenericKey>> {
         sourceSchema,
         pseudoColumnVersion.orElse(SystemColumns.LEGACY_PSEUDOCOLUMN_VERSION_NUMBER)
     );
-    this.forceChangelog = forceChangelog.orElse(false);
-  }
-
-  public Boolean isForceChangelog() {
-    return forceChangelog;
   }
 
   @Override
@@ -112,7 +102,6 @@ public final class TableSource extends SourceStep<KTableHolder<GenericKey>> {
         && Objects.equals(formats, that.formats)
         && Objects.equals(timestampColumn, that.timestampColumn)
         && Objects.equals(sourceSchema, that.sourceSchema)
-        && Objects.equals(forceChangelog, that.forceChangelog)
         && Objects.equals(pseudoColumnVersion, that.pseudoColumnVersion);
   }
 
@@ -124,7 +113,6 @@ public final class TableSource extends SourceStep<KTableHolder<GenericKey>> {
         formats,
         timestampColumn,
         sourceSchema,
-        forceChangelog,
         pseudoColumnVersion);
   }
 }
