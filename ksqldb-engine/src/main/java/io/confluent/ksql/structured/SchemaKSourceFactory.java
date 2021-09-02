@@ -24,16 +24,21 @@ import io.confluent.ksql.execution.plan.KStreamHolder;
 import io.confluent.ksql.execution.plan.KTableHolder;
 import io.confluent.ksql.execution.plan.SourceStep;
 import io.confluent.ksql.execution.plan.StreamSource;
+import io.confluent.ksql.execution.plan.TableSourceV1;
+import io.confluent.ksql.execution.plan.TableSourceVersions;
 import io.confluent.ksql.execution.plan.WindowedStreamSource;
 import io.confluent.ksql.execution.streams.ExecutionStepFactory;
 import io.confluent.ksql.execution.streams.StepSchemaResolver;
 import io.confluent.ksql.metastore.model.DataSource;
 import io.confluent.ksql.planner.plan.PlanBuildContext;
 import io.confluent.ksql.schema.ksql.LogicalSchema;
+import io.confluent.ksql.schema.ksql.SystemColumns;
 import io.confluent.ksql.serde.InternalFormats;
 import io.confluent.ksql.serde.KeyFormat;
 import io.confluent.ksql.serde.WindowInfo;
 import io.confluent.ksql.util.KsqlConfig;
+import java.util.OptionalInt;
+import java.util.Set;
 import org.apache.kafka.streams.kstream.Windowed;
 
 /**
@@ -170,14 +175,35 @@ public final class SchemaKSourceFactory {
 
     final SourceStep<KTableHolder<GenericKey>> step;
 
-    if (buildContext.getKsqlConfig().getBoolean(KsqlConfig.KSQL_ROWPARTITION_ROWOFFSET_ENABLED)) {
+    boolean useOldExecutionStepVersion = false;
+    int pseudoColumnVersionToUse = SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER;
+
+    //assume statement is CREATE OR REPLACE if this is present, as it indicates that there was
+    //an existing query with the same ID. if it wasn't COR, it will fail later anyways
+    if (buildContext.getPlanInfo().isPresent()) {
+      final Set<ExecutionStep<?>> set = buildContext.getPlanInfo().get().getSourceSet();
+      //if old query has any v1 table steps, use v1 table steps for this
+      for (ExecutionStep<?> executionStep : set) {
+        if (executionStep instanceof TableSourceV1) {
+          useOldExecutionStepVersion = true;
+        }
+        if (executionStep instanceof TableSourceVersions) {
+          pseudoColumnVersionToUse = ((TableSourceVersions) executionStep).getPseudoColumnVersion();
+        }
+      }
+    }
+
+    //when feature flag is removed, keep these blocks with useOldExecutionStepVersion as condition
+    if (buildContext.getKsqlConfig().getBoolean(KsqlConfig.KSQL_ROWPARTITION_ROWOFFSET_ENABLED)
+        && !useOldExecutionStepVersion) {
       step = ExecutionStepFactory.tableSource(
           contextStacker,
           dataSource.getSchema(),
           dataSource.getKafkaTopicName(),
           Formats.from(dataSource.getKsqlTopic()),
           dataSource.getTimestampColumn(),
-          InternalFormats.of(keyFormat, Formats.from(dataSource.getKsqlTopic()).getValueFormat())
+          InternalFormats.of(keyFormat, Formats.from(dataSource.getKsqlTopic()).getValueFormat()),
+          OptionalInt.of(pseudoColumnVersionToUse)
       );
 
     } else {
@@ -186,7 +212,8 @@ public final class SchemaKSourceFactory {
           dataSource.getSchema(),
           dataSource.getKafkaTopicName(),
           Formats.from(dataSource.getKsqlTopic()),
-          dataSource.getTimestampColumn()
+          dataSource.getTimestampColumn(),
+          OptionalInt.of(pseudoColumnVersionToUse)
       );
     }
 

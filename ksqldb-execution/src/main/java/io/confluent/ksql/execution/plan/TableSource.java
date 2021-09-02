@@ -27,7 +27,8 @@ import java.util.Optional;
 import javax.annotation.Nonnull;
 
 @Immutable
-public final class TableSource extends SourceStep<KTableHolder<GenericKey>> {
+public final class TableSource extends SourceStep<KTableHolder<GenericKey>>
+    implements TableSourceVersions {
 
   private final Formats stateStoreFormats;
 
@@ -78,7 +79,7 @@ public final class TableSource extends SourceStep<KTableHolder<GenericKey>> {
   @Override
   public void validateUpgrade(@Nonnull final ExecutionStep<?> to) {
     ExecutionStep<?> source = to;
-    while (!(source instanceof TableSource)) {
+    while (!(source instanceof TableSourceVersions)) {
       if (to.getSources().isEmpty()) {
         throw new KsqlException("Query is not upgradeable. The root source node of "
             + "the upgrade tree must be TableSource, but was " + source.getClass());

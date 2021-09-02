@@ -117,9 +117,14 @@ public final class ExecutionStepFactory {
       final LogicalSchema sourceSchema,
       final String topicName,
       final Formats formats,
-      final Optional<TimestampColumn> timestampColumn
+      final Optional<TimestampColumn> timestampColumn,
+      final OptionalInt oldPseudoColumnVersion
   ) {
     final QueryContext queryContext = stacker.getQueryContext();
+
+    final OptionalInt pseudoColumnVersion = OptionalInt.of(
+        oldPseudoColumnVersion.orElse(SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER));
+
     return new TableSourceV1(
         new ExecutionStepPropertiesV1(queryContext),
         topicName,
@@ -127,7 +132,7 @@ public final class ExecutionStepFactory {
         timestampColumn,
         sourceSchema,
         Optional.of(true),
-        OptionalInt.of(SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER)
+        pseudoColumnVersion
     );
   }
 
@@ -137,16 +142,20 @@ public final class ExecutionStepFactory {
       final String topicName,
       final Formats formats,
       final Optional<TimestampColumn> timestampColumn,
-      final Formats stateStoreFormats
+      final Formats stateStoreFormats,
+      final OptionalInt oldPseudoColumnVersion
   ) {
     final QueryContext queryContext = stacker.getQueryContext();
+    final int pseudoColumnVersion = oldPseudoColumnVersion.orElse(
+        SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER);
+
     return new TableSource(
         new ExecutionStepPropertiesV1(queryContext),
         topicName,
         formats,
         timestampColumn,
         sourceSchema,
-        SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER,
+        pseudoColumnVersion,
         stateStoreFormats
     );
   }

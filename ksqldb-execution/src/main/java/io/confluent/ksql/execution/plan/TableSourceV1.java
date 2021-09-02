@@ -29,7 +29,8 @@ import java.util.OptionalInt;
 import javax.annotation.Nonnull;
 
 @Immutable
-public final class TableSourceV1 extends SourceStep<KTableHolder<GenericKey>> {
+public final class TableSourceV1 extends SourceStep<KTableHolder<GenericKey>>
+    implements TableSourceVersions {
 
   private final Boolean forceChangelog;
 
