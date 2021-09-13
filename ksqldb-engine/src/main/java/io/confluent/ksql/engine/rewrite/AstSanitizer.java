@@ -93,7 +93,7 @@ public final class AstSanitizer {
     dataSourceExtractor.extractDataSources(node);
 
     final RewriterPlugin rewriterPlugin =
-        new RewriterPlugin(metaStore, dataSourceExtractor);
+        new RewriterPlugin(metaStore, dataSourceExtractor, ksqlConfig);
 
     final ExpressionRewriterPlugin expressionRewriterPlugin =
         new ExpressionRewriterPlugin(dataSourceExtractor, lambdaEnabled);
@@ -111,6 +111,7 @@ public final class AstSanitizer {
     private final MetaStore metaStore;
     private final DataSourceExtractor dataSourceExtractor;
     private final ColumnAliasGenerator aliasGenerator;
+    private final KsqlConfig ksqlConfig;
 
     RewriterPlugin(final MetaStore metaStore, final DataSourceExtractor dataSourceExtractor) {
       super(Optional.empty());
@@ -175,7 +176,7 @@ public final class AstSanitizer {
       }
 
       return Optional.of(
-          new SingleColumn(singleColumn.getLocation(), expression, Optional.of(alias))
+          new SingleColumn(singleColumn.getLocation(), expression, Optional.of(alias), ksqlConfig)
       );
     }
   }

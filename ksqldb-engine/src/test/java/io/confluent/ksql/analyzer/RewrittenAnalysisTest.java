@@ -32,6 +32,7 @@ import io.confluent.ksql.parser.NodeLocation;
 import io.confluent.ksql.parser.OutputRefinement;
 import io.confluent.ksql.parser.tree.WindowExpression;
 import io.confluent.ksql.serde.RefinementInfo;
+import io.confluent.ksql.util.KsqlConfig;
 import io.confluent.ksql.util.KsqlException;
 import java.util.Optional;
 import java.util.function.BiFunction;
@@ -76,6 +77,8 @@ public class RewrittenAnalysisTest {
   private RefinementInfo refinementInfo;
   @Mock
   private Optional<WindowTimeClause> gracePeriodOptional;
+  @Mock
+  private KsqlConfig ksqlConfig;
 
   private RewrittenAnalysis rewrittenAnalysis;
   private String windowName = "windowName";
@@ -85,7 +88,7 @@ public class RewrittenAnalysisTest {
 
   @Before
   public void setUp() {
-    rewrittenAnalysis = new RewrittenAnalysis(analysis, rewriter);
+    rewrittenAnalysis = new RewrittenAnalysis(analysis, rewriter, ksqlConfig);
 
     when(analysis.getRefinementInfo()).thenReturn(refinementInfoOptional);
     when(refinementInfoOptional.isPresent()).thenReturn(true);

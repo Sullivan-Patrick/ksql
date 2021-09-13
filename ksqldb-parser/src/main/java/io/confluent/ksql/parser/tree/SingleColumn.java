@@ -17,10 +17,14 @@ package io.confluent.ksql.parser.tree;
 
 import static java.util.Objects.requireNonNull;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.errorprone.annotations.Immutable;
 import io.confluent.ksql.execution.expression.tree.Expression;
 import io.confluent.ksql.name.ColumnName;
 import io.confluent.ksql.parser.NodeLocation;
+import io.confluent.ksql.parser.exception.ParseFailedException;
+import io.confluent.ksql.schema.ksql.SystemColumns;
+import io.confluent.ksql.util.KsqlConfig;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -29,12 +33,14 @@ public class SingleColumn extends SelectItem {
 
   private final Optional<ColumnName> alias;
   private final Expression expression;
+  private final KsqlConfig ksqlConfig;
 
   public SingleColumn(
       final Expression expression,
-      final Optional<ColumnName> alias
+      final Optional<ColumnName> alias,
+      final KsqlConfig ksqlConfig
   ) {
-    this(Optional.empty(), expression, alias);
+    this(Optional.empty(), expression, alias, ksqlConfig);
   }
 
   public SingleColumn(
@@ -44,12 +50,38 @@ public class SingleColumn extends SelectItem {
   ) {
     super(location);
 
+    final int pseudoColumnVersion =
+        ksqlConfig.getBoolean(KsqlConfig.KSQL_ROWPARTITION_ROWOFFSET_ENABLED)
+        ? SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER
+            : SystemColumns.LEGACY_PSEUDOCOLUMN_VERSION_NUMBER;
+
+    SystemColumns.systemColumnNames(pseudoColumnVersion)
+        .forEach(columnName -> checkForReservedToken(expression, alias, columnName));
+
     this.expression = requireNonNull(expression, "expression");
     this.alias = requireNonNull(alias, "alias");
   }
 
   public SingleColumn copyWithExpression(final Expression expression) {
-    return new SingleColumn(getLocation(), expression, alias);
+    return new SingleColumn(getLocation(), expression, alias, ksqlConfig);
+  }
+
+  private static void checkForReservedToken(
+      final Expression expression,
+      final Optional<ColumnName> alias,
+      final ColumnName reservedToken
+  ) {
+    if (!alias.isPresent()) {
+      return;
+    }
+    if (alias.get().text().equalsIgnoreCase(reservedToken.text())) {
+      final String text = expression.toString();
+      if (!text.substring(text.indexOf(".") + 1).equalsIgnoreCase(reservedToken.text())) {
+        throw new ParseFailedException("'" + reservedToken.text() + "'"
+            + " is a reserved column name. "
+            + "You cannot use it as an alias for a column.");
+      }
+    }
   }
 
   public Optional<ColumnName> getAlias() {

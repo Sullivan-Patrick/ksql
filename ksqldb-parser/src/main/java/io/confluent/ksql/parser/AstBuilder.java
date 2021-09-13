@@ -163,6 +163,7 @@ import io.confluent.ksql.query.QueryId;
 import io.confluent.ksql.schema.Operator;
 import io.confluent.ksql.schema.ksql.SqlTypeParser;
 import io.confluent.ksql.serde.RefinementInfo;
+import io.confluent.ksql.util.KsqlConfig;
 import io.confluent.ksql.util.KsqlException;
 import io.confluent.ksql.util.Pair;
 import io.confluent.ksql.util.ParserUtil;
@@ -186,9 +187,11 @@ import org.antlr.v4.runtime.tree.TerminalNode;
 public class AstBuilder {
 
   private final TypeRegistry typeRegistry;
+  private final KsqlConfig ksqlConfig;
 
   public AstBuilder(final TypeRegistry typeRegistry) {
     this.typeRegistry = requireNonNull(typeRegistry, "typeRegistry");
+    this.ksqlConfig = ksqlConfig;
   }
 
   public Statement buildStatement(final ParserRuleContext parseTree) {

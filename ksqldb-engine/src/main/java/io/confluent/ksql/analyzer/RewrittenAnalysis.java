@@ -39,6 +39,7 @@ import io.confluent.ksql.parser.tree.SelectItem;
 import io.confluent.ksql.parser.tree.SingleColumn;
 import io.confluent.ksql.parser.tree.WindowExpression;
 import io.confluent.ksql.serde.RefinementInfo;
+import io.confluent.ksql.util.KsqlConfig;
 import io.confluent.ksql.util.KsqlException;
 import java.util.List;
 import java.util.Objects;
@@ -61,15 +62,18 @@ public class RewrittenAnalysis implements ImmutableAnalysis {
   // CHECKSTYLE_RULES.ON: ClassDataAbstractionCoupling
   private final ImmutableAnalysis original;
   private final BiFunction<Expression, Context<Void>, Optional<Expression>> rewriter;
+  private final KsqlConfig ksqlConfig;
   static final WindowTimeClause zeroGracePeriod =
       new WindowTimeClause(0L, TimeUnit.MILLISECONDS);
 
   public RewrittenAnalysis(
       final ImmutableAnalysis original,
-      final BiFunction<Expression, Context<Void>, Optional<Expression>> rewriter
+      final BiFunction<Expression, Context<Void>, Optional<Expression>> rewriter,
+      final KsqlConfig ksqlConfig
   ) {
     this.original = Objects.requireNonNull(original, "original");
     this.rewriter = Objects.requireNonNull(rewriter, "rewriter");
+    this.ksqlConfig = ksqlConfig;
   }
 
   public ImmutableAnalysis original() {
@@ -93,7 +97,8 @@ public class RewrittenAnalysis implements ImmutableAnalysis {
               return new SingleColumn(
                   singleColumn.getLocation(),
                   rewrite(singleColumn.getExpression()),
-                  singleColumn.getAlias()
+                  singleColumn.getAlias(),
+                  ksqlConfig
               );
             }
         )

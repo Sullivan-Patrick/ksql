@@ -122,7 +122,7 @@ public class LogicalPlanner {
     this.ksqlConfig = Objects.requireNonNull(ksqlConfig, "ksqlConfig");
     this.refRewriter =
         new ColumnReferenceRewriter(analysis.getFromSourceSchemas(false).isJoin());
-    this.analysis = new RewrittenAnalysis(analysis, refRewriter::process);
+    this.analysis = new RewrittenAnalysis(analysis, refRewriter::process, ksqlConfig);
     this.metaStore = Objects.requireNonNull(metaStore, "metaStore");
     this.aggregateAnalyzer = new AggregateAnalyzer(metaStore);
   }

@@ -610,7 +610,8 @@ public class KsqlEngine implements KsqlExecutionContext, Closeable {
     }
     return new RewrittenAnalysis(
         analysis,
-        new QueryExecutionUtil.ColumnReferenceRewriter()::process
+        new QueryExecutionUtil.ColumnReferenceRewriter()::process,
+        ksqlConfig
     );
   }
 

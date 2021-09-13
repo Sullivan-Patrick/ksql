@@ -138,7 +138,7 @@ public final class SystemColumns {
       value = "MS_EXPOSE_REP",
       justification = "SYSTEM_COLUMN_NAMES is ImmutableSet"
   )
-  private static Set<ColumnName> systemColumnNames(final int pseudoColumnVersion) {
+  public static Set<ColumnName> systemColumnNames(final int pseudoColumnVersion) {
     return SYSTEM_COLUMN_NAMES_BY_VERSION.get(pseudoColumnVersion);
   }
 
