@@ -24,6 +24,7 @@ import io.confluent.ksql.schema.ksql.types.SqlType;
 import io.confluent.ksql.schema.ksql.types.SqlTypes;
 import io.confluent.ksql.util.KsqlConfig;
 import io.confluent.ksql.util.KsqlException;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -76,6 +77,12 @@ public final class SystemColumns {
       );
 
   private static final Set<ColumnName> MUST_BE_MATERIALIZED_FOR_TABLE_JOINS =
+      ImmutableSet.of(
+          ROWPARTITION_NAME,
+          ROWOFFSET_NAME
+      );
+
+  private static final Set<ColumnName> DISALLOWED_FOR_PULL_QUERIES =
       ImmutableSet.of(
           ROWPARTITION_NAME,
           ROWOFFSET_NAME
@@ -134,6 +141,25 @@ public final class SystemColumns {
     return isSystemColumn(columnName, getPseudoColumnVersionFromConfig(ksqlConfig));
   }
 
+  public static int getPseudoColumnVersionFromConfig(final KsqlConfig ksqlConfig) {
+    return ksqlConfig.getBoolean(KsqlConfig.KSQL_ROWPARTITION_ROWOFFSET_ENABLED)
+        ? CURRENT_PSEUDOCOLUMN_VERSION_NUMBER
+        : LEGACY_PSEUDOCOLUMN_VERSION_NUMBER;
+  }
+
+  public static boolean mustBeMaterializedForTableJoins(final ColumnName columnName) {
+    return MUST_BE_MATERIALIZED_FOR_TABLE_JOINS.contains(columnName);
+  }
+
+  public static boolean disallowedForPullQueries(
+      final ColumnName columnName,
+      final int pseudoColumnVersion
+  ) {
+    // option 2: make a set that is the union of DISALLOWED and systemcols,
+    // return if the set contains columnName
+    return isSystemColumn(columnName, pseudoColumnVersion) && DISALLOWED_FOR_PULL_QUERIES.contains(columnName);
+  }
+
   @SuppressFBWarnings(
       value = "MS_EXPOSE_REP",
       justification = "SYSTEM_COLUMN_NAMES is ImmutableSet"
@@ -142,20 +168,10 @@ public final class SystemColumns {
     return SYSTEM_COLUMN_NAMES_BY_VERSION.get(pseudoColumnVersion);
   }
 
-  public static boolean mustBeMaterializedForTableJoins(final ColumnName columnName) {
-    return MUST_BE_MATERIALIZED_FOR_TABLE_JOINS.contains(columnName);
-  }
-
   private static Set<ColumnName> buildColumns(final int pseudoColumnVersion) {
     return ImmutableSet.<ColumnName>builder()
         .addAll(pseudoColumnNames(pseudoColumnVersion))
         .addAll(WINDOW_BOUNDS_COLUMN_NAMES)
         .build();
-  }
-
-  private static int getPseudoColumnVersionFromConfig(final KsqlConfig ksqlConfig) {
-    return ksqlConfig.getBoolean(KsqlConfig.KSQL_ROWPARTITION_ROWOFFSET_ENABLED)
-        ? CURRENT_PSEUDOCOLUMN_VERSION_NUMBER
-        : LEGACY_PSEUDOCOLUMN_VERSION_NUMBER;
   }
 }

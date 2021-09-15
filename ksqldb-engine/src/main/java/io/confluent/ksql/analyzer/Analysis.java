@@ -267,6 +267,10 @@ public class Analysis implements ImmutableAnalysis {
     return Collections.unmodifiableList(tableFunctions);
   }
 
+  public KsqlConfig getKsqlConfig() {
+    return ksqlConfig;
+  }
+
   private LogicalSchema buildStreamsSchema(
       final AliasedDataSource ds,
       final boolean postAggregate

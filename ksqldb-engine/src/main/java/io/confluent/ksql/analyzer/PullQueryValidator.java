@@ -18,9 +18,21 @@ package io.confluent.ksql.analyzer;
 import static io.confluent.ksql.links.DocumentationLinks.PUSH_PULL_QUERY_DOC_LINK;
 
 import com.google.common.collect.ImmutableList;
+import io.confluent.ksql.execution.expression.tree.ComparisonExpression;
+import io.confluent.ksql.execution.expression.tree.Expression;
+import io.confluent.ksql.execution.expression.tree.LogicalBinaryExpression;
+import io.confluent.ksql.execution.expression.tree.QualifiedColumnReferenceExp;
+import io.confluent.ksql.execution.expression.tree.UnqualifiedColumnReferenceExp;
+import io.confluent.ksql.execution.expression.tree.VisitParentExpressionVisitor;
+import io.confluent.ksql.name.ColumnName;
+import io.confluent.ksql.parser.tree.SingleColumn;
+import io.confluent.ksql.schema.ksql.SystemColumns;
 import io.confluent.ksql.util.KsqlException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.Predicate;
 
 public class PullQueryValidator implements QueryValidator {
@@ -62,6 +74,14 @@ public class PullQueryValidator implements QueryValidator {
       Rule.of(
           analysis -> !analysis.getRefinementInfo().isPresent(),
           "Pull queries don't support EMIT clauses."
+      ),
+      Rule.of(
+          analysis -> !PullQueryValidator.disallowedColumnNameInSelectClause(analysis),
+          "Pull queries don't support ROWPARTITION or ROWOFFSET in select clauses"
+      ),
+      Rule.of(
+          analysis -> !PullQueryValidator.disallowedColumnNameInWhereClause(analysis),
+          "Pull queries don't support ROWPARTITION or ROWOFFSET in WHERE clauses."
       )
   );
 
@@ -72,6 +92,42 @@ public class PullQueryValidator implements QueryValidator {
     } catch (final KsqlException e) {
       throw new KsqlException(e.getMessage() + PULL_QUERY_SYNTAX_HELP, e);
     }
+  }
+
+  private static boolean disallowedColumnNameInSelectClause(final Analysis analysis) {
+    ColumnReferenceExtractor columnReferenceExtractor = new ColumnReferenceExtractor();
+    analysis.getSelectItems()
+        .stream()
+        .map(SingleColumn.class::cast)
+        .map(SingleColumn::getExpression)
+        .forEach(col -> columnReferenceExtractor.process(col, null));
+
+    final int pseudoColumnVersion = SystemColumns.getPseudoColumnVersionFromConfig(
+        analysis.getKsqlConfig());
+
+    return containsDisallowedColumnName(columnReferenceExtractor, pseudoColumnVersion);
+  }
+
+  //todo: check this doesnt cause circular dependency
+  private static boolean disallowedColumnNameInWhereClause(final Analysis analysis) {
+    ColumnReferenceExtractor columnReferenceExtractor = new ColumnReferenceExtractor();
+    final Optional<Expression> whereClause = analysis.getWhereExpression();
+
+    whereClause.ifPresent(expression -> columnReferenceExtractor.process(expression, null));
+
+    final int pseudoColumnVersion = SystemColumns.getPseudoColumnVersionFromConfig(
+        analysis.getKsqlConfig());
+
+    return containsDisallowedColumnName(columnReferenceExtractor, pseudoColumnVersion);
+  }
+
+  private static boolean containsDisallowedColumnName(
+      final ColumnReferenceExtractor columnReferenceExtractor,
+      final int pseudoColumnVersion
+  ) {
+      return columnReferenceExtractor.getColumns()
+          .stream()
+          .anyMatch(col -> SystemColumns.disallowedForPullQueries(col, pseudoColumnVersion));
   }
 
   private static final class Rule {
@@ -94,4 +150,46 @@ public class PullQueryValidator implements QueryValidator {
       }
     }
   }
+
+  private static class ColumnReferenceExtractor extends
+      VisitParentExpressionVisitor<Optional<Expression>, Void> {
+
+    private final Set<ColumnName> columns = new HashSet<>();
+
+    public Set<ColumnName> getColumns() {
+      return columns;
+    }
+
+    @Override
+    public Optional<Expression> visitUnqualifiedColumnReference(
+        UnqualifiedColumnReferenceExp node, Void context) {
+      columns.add(node.getColumnName());
+      return Optional.empty();
+    }
+
+    @Override
+    public Optional<Expression> visitQualifiedColumnReference(
+        QualifiedColumnReferenceExp node, Void context) {
+      columns.add(node.getColumnName());
+      return Optional.empty();    }
+
+    @Override
+    public Optional<Expression> visitComparisonExpression(
+        ComparisonExpression node, Void context) {
+      process(node.getLeft(), null);
+      process(node.getRight(), null);
+
+      return Optional.empty();
+    }
+
+    @Override
+    public Optional<Expression> visitLogicalBinaryExpression(LogicalBinaryExpression node,
+        Void context) {
+      process(node.getLeft(), null);
+      process(node.getRight(), null);
+
+      return Optional.empty();
+    }
+  }
+
 }
