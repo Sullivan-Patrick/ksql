@@ -20,6 +20,7 @@ import static java.util.Objects.requireNonNull;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.annotations.Immutable;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.confluent.ksql.execution.ddl.commands.KsqlTopic;
 import io.confluent.ksql.execution.expression.tree.Expression;
 import io.confluent.ksql.execution.expression.tree.FunctionCall;
@@ -267,6 +268,8 @@ public class Analysis implements ImmutableAnalysis {
     return Collections.unmodifiableList(tableFunctions);
   }
 
+  @SuppressFBWarnings(value = "EI_EXPOSE_REP",
+      justification = "KsqlConfig is Effectively Immutable")
   public KsqlConfig getKsqlConfig() {
     return ksqlConfig;
   }

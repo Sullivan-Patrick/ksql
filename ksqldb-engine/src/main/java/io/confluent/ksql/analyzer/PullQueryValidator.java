@@ -95,7 +95,7 @@ public class PullQueryValidator implements QueryValidator {
   }
 
   private static boolean disallowedColumnNameInSelectClause(final Analysis analysis) {
-    ColumnReferenceExtractor columnReferenceExtractor = new ColumnReferenceExtractor();
+    final ColumnReferenceExtractor columnReferenceExtractor = new ColumnReferenceExtractor();
     analysis.getSelectItems()
         .stream()
         .map(SingleColumn.class::cast)
@@ -110,7 +110,7 @@ public class PullQueryValidator implements QueryValidator {
 
   //todo: check this doesnt cause circular dependency
   private static boolean disallowedColumnNameInWhereClause(final Analysis analysis) {
-    ColumnReferenceExtractor columnReferenceExtractor = new ColumnReferenceExtractor();
+    final ColumnReferenceExtractor columnReferenceExtractor = new ColumnReferenceExtractor();
     final Optional<Expression> whereClause = analysis.getWhereExpression();
 
     whereClause.ifPresent(expression -> columnReferenceExtractor.process(expression, null));
@@ -125,9 +125,9 @@ public class PullQueryValidator implements QueryValidator {
       final ColumnReferenceExtractor columnReferenceExtractor,
       final int pseudoColumnVersion
   ) {
-      return columnReferenceExtractor.getColumns()
-          .stream()
-          .anyMatch(col -> SystemColumns.disallowedForPullQueries(col, pseudoColumnVersion));
+    return columnReferenceExtractor.getColumns()
+        .stream()
+        .anyMatch(col -> SystemColumns.disallowedForPullQueries(col, pseudoColumnVersion));
   }
 
   private static final class Rule {
@@ -162,20 +162,21 @@ public class PullQueryValidator implements QueryValidator {
 
     @Override
     public Optional<Expression> visitUnqualifiedColumnReference(
-        UnqualifiedColumnReferenceExp node, Void context) {
+        final UnqualifiedColumnReferenceExp node, final Void context) {
       columns.add(node.getColumnName());
       return Optional.empty();
     }
 
     @Override
     public Optional<Expression> visitQualifiedColumnReference(
-        QualifiedColumnReferenceExp node, Void context) {
+        final QualifiedColumnReferenceExp node, final Void context) {
       columns.add(node.getColumnName());
-      return Optional.empty();    }
+      return Optional.empty();
+    }
 
     @Override
     public Optional<Expression> visitComparisonExpression(
-        ComparisonExpression node, Void context) {
+        final ComparisonExpression node, final Void context) {
       process(node.getLeft(), null);
       process(node.getRight(), null);
 
@@ -183,8 +184,8 @@ public class PullQueryValidator implements QueryValidator {
     }
 
     @Override
-    public Optional<Expression> visitLogicalBinaryExpression(LogicalBinaryExpression node,
-        Void context) {
+    public Optional<Expression> visitLogicalBinaryExpression(
+        final LogicalBinaryExpression node, final Void context) {
       process(node.getLeft(), null);
       process(node.getRight(), null);
 

@@ -24,7 +24,6 @@ import io.confluent.ksql.schema.ksql.types.SqlType;
 import io.confluent.ksql.schema.ksql.types.SqlTypes;
 import io.confluent.ksql.util.KsqlConfig;
 import io.confluent.ksql.util.KsqlException;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -157,7 +156,8 @@ public final class SystemColumns {
   ) {
     // option 2: make a set that is the union of DISALLOWED and systemcols,
     // return if the set contains columnName
-    return isSystemColumn(columnName, pseudoColumnVersion) && DISALLOWED_FOR_PULL_QUERIES.contains(columnName);
+    return isSystemColumn(columnName, pseudoColumnVersion)
+        && DISALLOWED_FOR_PULL_QUERIES.contains(columnName);
   }
 
   @SuppressFBWarnings(
