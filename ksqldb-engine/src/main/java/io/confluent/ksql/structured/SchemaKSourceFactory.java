@@ -93,13 +93,16 @@ public final class SchemaKSourceFactory {
     final WindowInfo windowInfo = dataSource.getKsqlTopic().getKeyFormat().getWindowInfo()
         .orElseThrow(IllegalArgumentException::new);
 
+    int pseudoColumnVersionToUse = determinePseudoColumnVersionToUse(buildContext);
+
     final WindowedStreamSource step = ExecutionStepFactory.streamSourceWindowed(
         contextStacker,
         dataSource.getSchema(),
         dataSource.getKafkaTopicName(),
         Formats.from(dataSource.getKsqlTopic()),
         windowInfo,
-        dataSource.getTimestampColumn()
+        dataSource.getTimestampColumn(),
+        OptionalInt.of(pseudoColumnVersionToUse)
     );
 
     return schemaKStream(
@@ -119,12 +122,15 @@ public final class SchemaKSourceFactory {
       throw new IllegalArgumentException("windowed");
     }
 
+    int pseudoColumnVersionToUse = determinePseudoColumnVersionToUse(buildContext);
+
     final StreamSource step = ExecutionStepFactory.streamSource(
         contextStacker,
         dataSource.getSchema(),
         dataSource.getKafkaTopicName(),
         Formats.from(dataSource.getKsqlTopic()),
-        dataSource.getTimestampColumn()
+        dataSource.getTimestampColumn(),
+        OptionalInt.of(pseudoColumnVersionToUse)
     );
 
     return schemaKStream(
@@ -143,6 +149,8 @@ public final class SchemaKSourceFactory {
     final WindowInfo windowInfo = dataSource.getKsqlTopic().getKeyFormat().getWindowInfo()
         .orElseThrow(IllegalArgumentException::new);
 
+    int pseudoColumnVersionToUse = determinePseudoColumnVersionToUse(buildContext);
+
     final SourceStep<KTableHolder<Windowed<GenericKey>>> step =
         ExecutionStepFactory.tableSourceWindowed(
         contextStacker,
@@ -150,7 +158,8 @@ public final class SchemaKSourceFactory {
         dataSource.getKafkaTopicName(),
         Formats.from(dataSource.getKsqlTopic()),
         windowInfo,
-        dataSource.getTimestampColumn()
+        dataSource.getTimestampColumn(),
+        OptionalInt.of(pseudoColumnVersionToUse)
       );
 
     return schemaKTable(
@@ -175,22 +184,15 @@ public final class SchemaKSourceFactory {
 
     final SourceStep<KTableHolder<GenericKey>> step;
 
-    boolean useOldExecutionStepVersion = false;
-    int pseudoColumnVersionToUse = SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER;
+    int pseudoColumnVersionToUse = determinePseudoColumnVersionToUse(buildContext);
 
-    //assume statement is CREATE OR REPLACE if this is present, as it indicates that there was
-    //an existing query with the same ID. if it wasn't COR, it will fail later anyways
+    //if old query has any v1 table steps, use v1 table steps for this
+    boolean useOldExecutionStepVersion = false;
     if (buildContext.getPlanInfo().isPresent()) {
-      final Set<ExecutionStep<?>> set = buildContext.getPlanInfo().get().getSourceSet();
-      //if old query has any v1 table steps, use v1 table steps for this
-      for (ExecutionStep<?> executionStep : set) {
-        if (executionStep instanceof TableSourceV1) {
-          useOldExecutionStepVersion = true;
-        }
-        if (executionStep instanceof TableSourceVersions) {
-          pseudoColumnVersionToUse = ((TableSourceVersions) executionStep).getPseudoColumnVersion();
-        }
-      }
+      final Set<ExecutionStep<?>> sourceSteps = buildContext.getPlanInfo().get().getSourceSet();
+      useOldExecutionStepVersion = sourceSteps
+          .stream()
+          .anyMatch(executionStep -> executionStep instanceof TableSourceV1);
     }
 
     //when feature flag is removed, keep these blocks with useOldExecutionStepVersion as condition
@@ -203,7 +205,7 @@ public final class SchemaKSourceFactory {
           Formats.from(dataSource.getKsqlTopic()),
           dataSource.getTimestampColumn(),
           InternalFormats.of(keyFormat, Formats.from(dataSource.getKsqlTopic()).getValueFormat()),
-          OptionalInt.of(pseudoColumnVersionToUse)
+          pseudoColumnVersionToUse
       );
 
     } else {
@@ -223,6 +225,22 @@ public final class SchemaKSourceFactory {
         dataSource.getKsqlTopic().getKeyFormat(),
         step
     );
+  }
+
+  private static int determinePseudoColumnVersionToUse(final PlanBuildContext buildContext) {
+
+    //assume statement is CREATE OR REPLACE if this is present, as it indicates that there was
+    //an existing query with the same ID. if it wasn't COR, it will fail later anyways
+    if (buildContext.getPlanInfo().isPresent()) {
+      final Set<ExecutionStep<?>> sourceSteps = buildContext.getPlanInfo().get().getSourceSet();
+      //if old query has any v1 table steps, use v1 table steps for this
+      for (ExecutionStep<?> executionStep : sourceSteps) {
+        if (executionStep instanceof TableSourceVersions) {
+          return ((SourceStep) executionStep).getPseudoColumnVersion();
+        }
+      }
+    }
+    return SystemColumns.CURRENT_PSEUDOCOLUMN_VERSION_NUMBER;
   }
 
   private static <K> SchemaKStream<K> schemaKStream(
